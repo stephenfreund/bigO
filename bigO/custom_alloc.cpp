@@ -70,7 +70,7 @@ static inline double stochastic_round(double v) {
 static size_t apply_dilation(size_t size, double dilation_factor) {
   //  return (double) size * dilation_factor; // FIXME perhaps, deterministic for now
   size_t new_size = size * stochastic_round(dilation_factor);
-  printf("[DEBUG] Applying dilation: dilation factor=%f, old size=%lu, new size=%lu\n", dilation_factor, size, new_size);
+  //  printf("[DEBUG] Applying dilation: dilation factor=%f, old size=%lu, new size=%lu\n", dilation_factor, size, new_size);
   return new_size;
 }
 

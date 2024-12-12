@@ -7,7 +7,6 @@ import json
 import time
 import marshal
 import random
-import tracemalloc
 import numpy as np
 
 from collections import defaultdict
@@ -26,23 +25,27 @@ wrapped_functions = set()
 
 delay_factor = defaultdict(float)
 
-def monkey_patch_function(obj, func_name):
+def monkey_patch_function(obj, func_name, time_dilation=True, space_dilation=True):
     """
     Monkey patch the specified function in the given object.
     If factor > 0, the patched version will time the function and then sleep 
     factor times as long as it took to run.
     """
+    import customalloc
     original = obj[func_name]
     def wrapper(*args, **kwargs):
         delay = delay_factor[func_name]
         if delay > 0.0:
             start = time.perf_counter()
             try:
-                import customalloc
+                if space_dilation:
+                    customalloc.set_dilation_factor(delay)
                 ret = original(*args, **kwargs)
             finally:
                 elapsed = time.perf_counter() - start
-            time.sleep(elapsed * delay)
+                customalloc.set_dilation_factor(1.0)
+            if time_dilation:
+                time.sleep(elapsed * delay)
         else:
             ret = original(*args, **kwargs)
         return ret
@@ -134,7 +137,7 @@ def set_performance_data_filename(fname):
         performance_data = {}
         pass
 
-def track(length_computation):
+def track(length_computation, time_dilation=True, space_dilation=True, max_dilation=2.0):
     """
     A decorator to measure and store performance metrics of a function.
 
@@ -146,18 +149,23 @@ def track(length_computation):
         callable: The decorated function.
     """
     def decorator(func):
-        # Grab the source code and identify any functions invoked by this function.
-        source = inspect.getsource(inspect.getmodule(func))
-        tree = ast.parse(source)
-        finder = FunctionCallFinder()
-        finder.visit(tree)
-        called_functions = finder.get_root_functions(func.__name__)
-        # print(f"Functions called by {func.__name__}: {called_functions}")
-        if not called_functions:
-            print(f"Warning: cannot augment samples for {func.__name__}")
-        # Patch all the functions so we can individually delay them.
-        for fn in called_functions:
-            monkey_patch_function(func.__globals__, fn)
+        called_functions = set()
+        if time_dilation or space_dilation:
+            # Grab the source code and identify any functions invoked by this function.
+            source = inspect.getsource(inspect.getmodule(func))
+            tree = ast.parse(source)
+            finder = FunctionCallFinder()
+            finder.visit(tree)
+            called_functions = finder.get_root_functions(func.__name__)
+            # print(f"Functions called by {func.__name__}: {called_functions}")
+            if not called_functions:
+                print(f"Warning: cannot augment samples for {func.__name__}")
+            # Patch all the functions so we can individually delay them.
+            for fn in called_functions:
+                monkey_patch_function(func.__globals__,
+                                      fn,
+                                      time_dilation=time_dilation,
+                                      space_dilation=space_dilation)
 
         # Store a hash of the code for checking if the function has changed
         # Currently not implemented.
@@ -175,31 +183,38 @@ def track(length_computation):
             length = length_computation(*args, **kwargs)
 
             # Delay all the called functions.
-            global delay_factor
-            delay = random.uniform(1.0, 2.0) # FIXME
-            import customalloc
-            customalloc.set_dilation_factor(delay)
-            for fn in finder.get_root_functions(func.__name__):
-                delay_factor[fn] = delay
+            delay = 1.0
+            if time_dilation or space_dilation:
+                global delay_factor
+                delay = random.uniform(1.0, max_dilation)
+                # print(f"NEW DELAY {delay=}")
+                for fn in finder.get_root_functions(func.__name__):
+                    delay_factor[fn] = delay
             # Start measuring time and memory
             start_time = time.perf_counter()
-            tracemalloc.start()
+            import gc
+            gc.collect()
+            import customalloc
+            customalloc.reset_statistics();
             try:
+                # print(f"RUNNING {func.__name__}")
                 result = func(*args, **kwargs)
             finally:
                 # Stop measuring time
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
                 
-                # Stop measuring memory
-                current, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
+                peak = customalloc.get_peak_allocated()
+                # print(f"{peak=}") # FIXME
 
                 # Turn off the delay for all functions
-                for fn in finder.get_root_functions(func.__name__):
-                    delay_factor[fn] = 0
+                if time_dilation or space_dilation:
+                    import customalloc
+                    customalloc.set_dilation_factor(1.0)
+                    for fn in finder.get_root_functions(func.__name__):
+                        delay_factor[fn] = 0.0
                 
-                # Store the performance data Only allow non-zero
+                # Store the performance data. Only allow non-zero
                 # lengths to avoid issues downstream when computing
                 # logs of lengths.
                 if length * delay:

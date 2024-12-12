@@ -3,7 +3,7 @@ from setuptools import setup, Extension
 # Define the native extension
 customalloc_extension = Extension(
     "customalloc",
-    sources=["bigO/custom_alloc.c"],
+    sources=["bigO/custom_alloc.cpp"],
     include_dirs=["bigO/include"],
 )
 
@@ -38,5 +38,5 @@ setup(
     python_requires=">=3.8",
     ext_modules=[customalloc_extension],
     packages=["bigO"],
-    package_data={"bigO": ["*.c", "*.h"]},
+    package_data={"bigO": ["*.cpp", "*.h"]},
 )

@@ -71,12 +71,14 @@ model_log_n = Model("log(n)", lambda n, a, b: a * np.log(n) + b)
 model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b)
 model_linear_n = Model("n", lambda n, a, b: a * n + b)
 model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * np.log(n) + b)
-model_n_squared = Model("n^2", lambda n, a, b: a * n**2 + b)
-model_n_cubed = Model("n^3", lambda n, a, b: a * n**3 + b)
-model_n_power_k = Model("n^k", lambda n, a, b, k: a * n**k + b)
-model_log_n_squared = Model("(log(n))^2", lambda n, a, b: a * (np.log(n) ** 2) + b)
-model_log_n_cubed = Model("(log(n))^3", lambda n, a, b: a * (np.log(n) ** 3) + b)
-model_n_log_n_power_k = Model("n*(log(n))^k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b)
+model_n_squared = Model("n**2", lambda n, a, b: a * n**2 + b)
+model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b)
+model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b)
+model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (np.log(n) ** 2) + b)
+model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (np.log(n) ** 3) + b)
+model_n_log_n_power_k = Model(
+    "n*(log(n))**k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b
+)
 
 # List of models
 models = [
@@ -94,6 +96,61 @@ models = [
 ]
 
 
+def get_model(name):
+    if not name.startswith("O(") or not name.endswith(")"):
+        print(f"Invalid model name: {name}.  Should be of the form O(...)")
+        return None
+
+    # Strip "O(" and ")"
+    name = name[2:-1]
+
+    for model in models:
+        if model.name == name:
+            return model
+
+    # if name matches pattern n**k, return a new model with k harcoded in
+    if name.startswith("n**"):
+        k = float(name[3:])
+        return Model(name, lambda n, a, b: a * n**k + b)
+
+    return None
+
+
+# TODO: Check the ranks for n^k.
+def rank(fitted_model):
+    if fitted_model.model != model_n_power_k:
+        return models.index(fitted_model.model)
+    else:
+        # Handle the special case for model_n_power_k
+        k = fitted_model.params[-1]
+        if k == 0:  # Constant growth
+            return 0  # Comparate to constant
+        elif 0 < k < 1:  # Sub-linear growth
+            return models.index(model_sqrt_n)  # Comparable to sqrt(n)
+        elif k == 1:  # Linear growth
+            return models.index(model_linear_n)
+        elif 1 < k < 2:  # Super-linear but sub-quadratic
+            return models.index(model_n_log_n)
+        elif k == 2:  # Quadratic growth
+            return models.index(model_n_squared)
+        elif 2 < k < 3:  # Super-quadratic but sub-cubic
+            return models.index(model_n_cubed) - 1  # Between quadratic and cubic
+        elif k == 3:  # Cubic growth
+            return models.index(model_n_cubed)
+        else:  # k > 3, ranks higher than cubic
+            return len(models)  # Ranks at the end
+
+
+def leq(fitted_model_1, fitted_model_2):
+    return rank(fitted_model_1) <= rank(fitted_model_2)
+
+
+def fit_model(n, y, model) -> Tuple[FittedModel, float]:
+    params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count)
+    fitted = FittedModel(model=model, params=params)
+    aic = fitted.aic(n, y)
+    return fitted, aic
+
 
 def fit_models(n, y) -> List[Tuple[FittedModel, float]]:
     """Fit models to data and order by increasing aic. Return list of (model, aic) tuples."""
@@ -101,22 +158,17 @@ def fit_models(n, y) -> List[Tuple[FittedModel, float]]:
 
     for model in models:
         try:
-            params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count)
-            fitted = FittedModel(model=model, params=params)
-
-            aic = fitted.aic(n, y)
+            fitted, aic = fit_model(n, y, model)
             results.append((fitted, aic))
-
         except Exception as e:
             print(f"Failed to fit {model} model: {e}")
 
-    # Convert results to a DataFrame
     results.sort(key=lambda x: x[1])
     return results
 
 
 def better_fit_pvalue(
-    n, y, a: FittedModel, b: FittedModel, trials=100  # low trials to start with
+    n, y, a: FittedModel, b: FittedModel, trials=1000  # low trials to start with
 ):
     """
     Return pvalue that model 'a' is a better fit than model 'b'.
@@ -145,7 +197,7 @@ def better_fit_pvalue(
 
 
 def better_fit_pvalue_vectorized(
-    n, y, a: FittedModel, b: FittedModel, trials=100  # low trials to start with
+    n, y, a: FittedModel, b: FittedModel, trials=1000  # low trials to start with
 ):
 
     # Original delta
@@ -271,7 +323,7 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
                 label=f"Fit: {best_fit}",
             )
 
-            for j in np.arange(1,3):
+            for j in np.arange(1, 3):
                 ax_time.plot(
                     fit_n,
                     time_fits[j][0].predict(fit_n),
@@ -281,9 +333,7 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
                     label=f"{j+1}nd Fit: {time_fits[j][0]}",
                 )
 
-            title = (
-                f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse(n_time,y_time):.3f} pvalue={time_pvalue:.3f}"
-            )
+            title = f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse(n_time,y_time):.3f} pvalue={time_pvalue:.3f}"
         else:
             title = f"{func} (Time): No fit"
 
@@ -301,9 +351,6 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
                 fit_n = np.sort(n_mem)
                 fit_y = best_fit.predict(fit_n)
 
-                print(fit_n)
-                print(fit_y)
-
                 ax_mem.plot(
                     fit_n,
                     fit_y,
@@ -313,7 +360,7 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
                     label=f"Fit: {best_fit}",
                 )
 
-                for j in np.arange(1,3):
+                for j in np.arange(1, 3):
                     ax_mem.plot(
                         fit_n,
                         mem_fits[j][0].predict(fit_n),

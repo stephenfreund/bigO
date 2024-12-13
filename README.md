@@ -5,9 +5,6 @@ To use `bigO`, you just need to add a `@bigO.track` decorator to your function t
 You can then run your function as usual, ideally along a wide range of inputs, and `bigO` will report the computational
 complexity of that function.
 
-A novel feature of `bigO` is that, as long as your function calls another function, `bigO` will automatically generate diversity.
-This feature ensures that you can get computational complexity information even when there are not a wide range of inputs to the function (even one input is enough!).
-
 `bigO` accumulates its results in a file named `bigO_data.json` in the local directory;
 you can then generate a graph of time and space complexity for each tracked function by running `python3 -m bigO.graph`.
 
@@ -59,7 +56,7 @@ This command creates the file `bigO.pdf` that contains graphs like this:
 Complexity"](https://theory.stanford.edu/~aiken/publications/papers/fse07.pdf)
 by Goldsmith et al., FSE 2007, using log-log plots to fit a power-law distribution.
 
-Unlike that work, `bigO` uses the
-[AIC](https://en.wikipedia.org/wiki/Akaike_information_criterion) to
-select the best model. `bigO` also measures space complexity by
-tracking memory allocations during function execution.
+Unlike that work, `bigO` also measures space complexity by
+tracking memory allocations during function execution. In addition,
+`bigO` uses the [AIC](https://en.wikipedia.org/wiki/Akaike_information_criterion) to
+select the best model. 

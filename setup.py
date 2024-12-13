@@ -1,10 +1,17 @@
 from setuptools import setup, Extension
 
+def extra_compile_args():
+    """Returns extra compiler args for platform."""
+    if sys.platform == 'win32':
+        return ['/std:c++20', '/O2', '/DNDEBUG'] # for Visual Studio C++
+
+    return ['-std=c++20', '-O3', '-DNDEBUG']
+
 # Define the native extension
 customalloc_extension = Extension(
     "customalloc",
     sources=["bigO/custom_alloc.cpp"],
-    extra_compile_args=["-O3", "-DNDEBUG", "--std=c++20", "-march=native"],
+    extra_compile_args=extra_compile_args()
     include_dirs=["bigO/include"],
 )
 

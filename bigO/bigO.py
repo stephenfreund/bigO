@@ -59,8 +59,6 @@ def track(length_computation):
             customalloc.enable()
             # Calculate the length based on the provided computation
             length = length_computation(*args, **kwargs)
-            result = func(*args, **kwargs)
-            return result
 
             # Start measuring time and memory
             start_time = time.perf_counter()

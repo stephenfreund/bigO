@@ -11,7 +11,7 @@ def extra_compile_args():
 customalloc_extension = Extension(
     "customalloc",
     sources=["bigO/custom_alloc.cpp"],
-    extra_compile_args=extra_compile_args()
+    extra_compile_args=extra_compile_args(),
     include_dirs=["bigO/include"],
 )
 

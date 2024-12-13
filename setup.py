@@ -2,6 +2,7 @@ from setuptools import setup, Extension
 
 def extra_compile_args():
     """Returns extra compiler args for platform."""
+    import sys
     if sys.platform == 'win32':
         return ['/std:c++20', '/O2', '/DNDEBUG'] # for Visual Studio C++
 

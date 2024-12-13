@@ -10,15 +10,18 @@ import random
 
 from collections import defaultdict
 from functools import lru_cache, wraps
+from typing import Any, Callable
 
 # Global dictionary to store performance data
-performance_data = defaultdict(list)
+performance_data : dict[str, list[Any]] = defaultdict(list)
 
 system_name = "bigO"
 
 performance_data_filename = f"{system_name}_data.json"
 
-def set_performance_data_filename(fname):
+hash_function_values : dict[str, Any] = {}
+
+def set_performance_data_filename(fname: str) -> None:
     global performance_data_filename
     global performance_data
     performance_data_filename = fname
@@ -26,11 +29,11 @@ def set_performance_data_filename(fname):
         with open(performance_data_filename, 'r') as infile:
             performance_data = json.load(infile)
     except FileNotFoundError:
-        performance_data = {}
+        performance_data = dict()
         pass
 
 
-def track(length_computation):
+def track(length_computation: Callable[..., int]) -> Callable:
     """
     A decorator to measure and store performance metrics of a function.
 
@@ -41,16 +44,18 @@ def track(length_computation):
     Returns:
         callable: The decorated function.
     """
-    def decorator(func):
-        # Store a hash of the code for checking if the function has changed
-        # Currently not implemented.
+    def decorator(func: Callable) -> Callable:
+        # Store a hash of the code for discarding old values if the
+        # function has changed
         code = marshal.dumps(func.__code__)
         hash_value = hashlib.sha256(code).hexdigest()
-        
+
         # Get the full name of the function (file + name)
         func_name = func.__name__
-        file_name = inspect.getmodule(func).__file__
+        module = inspect.getmodule(func)
+        file_name = module.__file__ if module and module.__file__ else "<unknown>"
         full_name = str((func_name, file_name))
+        hash_function_values[full_name] = hash_value
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -91,7 +96,7 @@ def track(length_computation):
 
 
 @atexit.register
-def save_performance_data():
+def save_performance_data() -> None:
     """
     Saves the collected performance data to a JSON file at program exit.
     """
@@ -101,12 +106,22 @@ def save_performance_data():
     try:
         with open(performance_data_filename, 'r') as infile:
             old_data = json.load(infile)
+        for full_name in old_data:
+            if full_name in hash_function_values:
+                validated = []
+                current_hash = hash_function_values[full_name]
+                for entry in old_data[full_name]:
+                    if entry["hash"] == current_hash:
+                        validated.append(entry)
+                old_data[full_name] = validated
+            
     except FileNotFoundError:
         old_data = {}
         pass
 
     # Merge the old with the new dictionary
     for key, value_list in old_data.items():
+
         if key in performance_data:
             # Key exists in both dicts; extend the list from performance_data with the new entries
             performance_data[key].extend(value_list)

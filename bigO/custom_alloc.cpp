@@ -88,10 +88,9 @@ static PyMemAllocatorEx alloc = {
 
 // Custom malloc implementation
 void *custom_malloc(void *ctx, size_t size) {
-    size_t dilated_size = apply_dilation(size, DILATION_FACTOR);
-    void * ptr = origAlloc.malloc(ctx, size);
-    objSizes[ptr] = dilated_size;
-    currentMemoryUsage += dilated_size;
+    auto * ptr = origAlloc.malloc(ctx, size);
+    objSizes[ptr] = size;
+    currentMemoryUsage += size;
     if (currentMemoryUsage > peakMemoryUsage) {
       peakMemoryUsage = currentMemoryUsage;
     }
@@ -100,13 +99,10 @@ void *custom_malloc(void *ctx, size_t size) {
 
 // Custom calloc implementation
 void *custom_calloc(void *ctx, size_t nelem, size_t elsize) {
-    size_t size = nelem * elsize;
-    size_t dilated_size = apply_dilation(size, DILATION_FACTOR);
-    //printf("[DEBUG] Allocating %zu bytes (dilated to %zu bytes with factor %.2f).\n",
-    //       size, dilated_size, dilation_factor);
-    void * ptr = origAlloc.calloc(ctx, size, 1);
-    objSizes[ptr] = dilated_size;
-    currentMemoryUsage += dilated_size;
+  auto size = nelem * elsize;
+    auto * ptr = origAlloc.calloc(ctx, size, 1);
+    objSizes[ptr] = size;
+    currentMemoryUsage += size;
     if (currentMemoryUsage > peakMemoryUsage) {
       peakMemoryUsage = currentMemoryUsage;
     }
@@ -123,8 +119,9 @@ void *custom_realloc(void *ctx, void *ptr, size_t size) {
         return NULL;
     }
     currentMemoryUsage -= objSizes[ptr];
-    void * new_ptr = origAlloc.realloc(ctx, ptr, size);
-    currentMemoryUsage += size; // FIXME dilate?
+    auto * new_ptr = origAlloc.realloc(ctx, ptr, size);
+    objSizes[new_ptr] = size;
+    currentMemoryUsage += size;
     if (currentMemoryUsage > peakMemoryUsage) {
       peakMemoryUsage = currentMemoryUsage;
     }
@@ -133,18 +130,31 @@ void *custom_realloc(void *ctx, void *ptr, size_t size) {
 
 // Custom free implementation
 void custom_free(void *ctx, void *ptr) {
-  if (ptr) {
     currentMemoryUsage -= objSizes[ptr];
     origAlloc.free(ctx, ptr);
-    objSizes[ptr] = 0;
-  }
+    //    objSizes[ptr] = 0;
 }
 
 // Set the custom allocator
 void set_custom_allocator() {
-    PyMem_GetAllocator(PYMEM_DOMAIN_OBJ, &origAlloc);
     PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &alloc);
     PyMem_SetAllocator(PYMEM_DOMAIN_OBJ, &alloc);
+}
+
+// Reset the custom allocator
+void reset_custom_allocator() {
+    PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &origAlloc);
+    PyMem_SetAllocator(PYMEM_DOMAIN_OBJ, &origAlloc);
+}
+
+static PyObject* enable(PyObject *self, PyObject *args) {
+  set_custom_allocator();
+  Py_RETURN_NONE;
+}
+
+static PyObject* disable(PyObject *self, PyObject *args) {
+  reset_custom_allocator();
+  Py_RETURN_NONE;
 }
 
 // Python wrapper for clear_statistics
@@ -164,8 +174,10 @@ static PyObject* get_peak_allocated(PyObject* self, PyObject* args) {
 
 // Python methods
 static PyMethodDef CustomAllocMethods[] = {
-    {"set_dilation_factor", set_dilation_factor, METH_VARARGS, "Set the dilation factor."},
+  //    {"set_dilation_factor", set_dilation_factor, METH_VARARGS, "Set the dilation factor."},
     {"reset_statistics", reset_statistics, METH_NOARGS, "Clear allocation statistics."},
+    {"enable", enable, METH_NOARGS, "Enable allocation statistics collection."},
+    {"disable", disable, METH_NOARGS, "Disable allocation statistics collection."},
     {"get_current_allocated", get_current_allocated, METH_NOARGS, "Get the current allocated memory size."},
     {"get_peak_allocated", get_peak_allocated, METH_NOARGS, "Get the peak allocated memory size."},
     {NULL, NULL, 0, NULL}  // Sentinel
@@ -175,14 +187,14 @@ static PyMethodDef CustomAllocMethods[] = {
 static struct PyModuleDef customalloc_module = {
     PyModuleDef_HEAD_INIT,
     "customalloc",
-    "Custom memory allocator with dilation",
+    "Tracking memory allocator",
     -1,
     CustomAllocMethods
 };
 
 // Module initialization function
 PyMODINIT_FUNC PyInit_customalloc(void) {
-    seed_xorshift(time(NULL));  // Seed the random number generator
-    set_custom_allocator();
+  //    seed_xorshift(time(NULL));  // Seed the random number generator
+    PyMem_GetAllocator(PYMEM_DOMAIN_OBJ, &origAlloc);
     return PyModule_Create(&customalloc_module);
 }

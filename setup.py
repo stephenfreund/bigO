@@ -4,6 +4,7 @@ from setuptools import setup, Extension
 customalloc_extension = Extension(
     "customalloc",
     sources=["bigO/custom_alloc.cpp"],
+    extra_compile_args=["-O3", "-DNDEBUG", "--std=c++20", "-march=native"],
     include_dirs=["bigO/include"],
 )
 

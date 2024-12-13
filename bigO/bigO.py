@@ -25,7 +25,7 @@ wrapped_functions = set()
 
 delay_factor = defaultdict(float)
 
-def monkey_patch_function(obj, func_name, time_dilation=True, space_dilation=True):
+def monkey_patch_function(obj, func_name, time_dilation=False, space_dilation=False):
     """
     Monkey patch the specified function in the given object.
     If factor > 0, the patched version will time the function and then sleep 
@@ -137,7 +137,7 @@ def set_performance_data_filename(fname):
         performance_data = {}
         pass
 
-def track(length_computation, time_dilation=True, space_dilation=True, max_dilation=2.0):
+def track(length_computation, time_dilation=False, space_dilation=False, max_dilation=2.0):
     """
     A decorator to measure and store performance metrics of a function.
 

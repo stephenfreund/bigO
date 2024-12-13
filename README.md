@@ -63,13 +63,3 @@ Unlike that work, `bigO` uses the
 [AIC](https://en.wikipedia.org/wiki/Akaike_information_criterion) to
 select the best model. `bigO` also measures space complexity by
 tracking memory allocations during function execution.
-
-#### Diversity via random time and space dilation
-
-While previous work depends on functions being executed over a wide
-range of inputs, `bigO` uses a novel approach that lets it generate
-diversity even for fixed inputs. This approach works by randomly
-dilating the execution time of functions called by the function being
-tested, as well as the size of memory allocations. This approach lets
-`bigO` collect more data points and better measure computational
-complexity.

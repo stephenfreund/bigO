@@ -18,8 +18,6 @@ system_name = "bigO"
 
 performance_data_filename = f"{system_name}_data.json"
 
-wrapped_functions = set()
-        
 def set_performance_data_filename(fname):
     global performance_data_filename
     global performance_data
@@ -30,6 +28,7 @@ def set_performance_data_filename(fname):
     except FileNotFoundError:
         performance_data = {}
         pass
+
 
 def track(length_computation):
     """
@@ -56,13 +55,13 @@ def track(length_computation):
         @wraps(func)
         def wrapper(*args, **kwargs):
             import customalloc
-            customalloc.enable()
             # Calculate the length based on the provided computation
             length = length_computation(*args, **kwargs)
 
             # Start measuring time and memory
             start_time = time.perf_counter()
             customalloc.reset_statistics();
+            customalloc.enable()
             try:
                 result = func(*args, **kwargs)
             finally:
@@ -71,6 +70,8 @@ def track(length_computation):
                 elapsed_time = end_time - start_time
                 
                 peak = customalloc.get_peak_allocated()
+                nobjects = customalloc.get_objects_allocated();
+                customalloc.disable()
                 
                 # Store the performance data. Only allow non-zero
                 # lengths to avoid issues downstream when computing
@@ -81,10 +82,9 @@ def track(length_computation):
                         "length": length,
                         "time": elapsed_time,
                         "memory": peak,  # Peak memory usage in bytes
+                        "nobjects": nobjects,
                     }
                     performance_data[full_name].append(new_entry)
-
-            customalloc.disable()
             return result
         return wrapper
     return decorator

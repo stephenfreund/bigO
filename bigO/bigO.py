@@ -1,15 +1,13 @@
-import ast
 import atexit
-import builtins
 import hashlib
 import inspect
 import json
 import time
 import marshal
-import random
+import sys
 
 from collections import defaultdict
-from functools import lru_cache, wraps
+from functools import wraps
 from typing import Any, Callable
 
 # Global dictionary to store performance data
@@ -33,6 +31,9 @@ def set_performance_data_filename(fname: str) -> None:
         pass
 
 
+TOOL_ID = 1
+sys.monitoring.use_tool_id(TOOL_ID, "counter")
+    
 def track(length_computation: Callable[..., int]) -> Callable:
     """
     A decorator to measure and store performance metrics of a function.
@@ -56,26 +57,54 @@ def track(length_computation: Callable[..., int]) -> Callable:
         file_name = module.__file__ if module and module.__file__ else "<unknown>"
         full_name = str((func_name, file_name))
         hash_function_values[full_name] = hash_value
-
+        python_version = (sys.version_info[0], sys.version_info[1])
+        
+        if python_version >= (3, 12):
+            events = [sys.monitoring.events.INSTRUCTION]
+            event_set = 0
+            for event in events:
+                event_set |= event
+            TOOL_ID = 1
+            sys.monitoring.set_local_events(TOOL_ID, func.__code__, event_set)
+        
         @wraps(func)
         def wrapper(*args, **kwargs):
+            instruction_count = 0
+            def increment_counter(*args):
+                nonlocal instruction_count
+                instruction_count += 1
+            def get_counter():
+                nonlocal instruction_count
+                return instruction_count
+            def reset_counter():
+                nonlocal instruction_count
+                instruction_count = 0
+                
             import customalloc
             # Calculate the length based on the provided computation
             length = length_computation(*args, **kwargs)
 
             # Start measuring time and memory
             start_time = time.perf_counter()
-            customalloc.reset_statistics();
+            customalloc.reset_statistics()
             customalloc.enable()
+            
+            if python_version >= (3, 12):
+                # Count instructions
+                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_counter)
             try:
                 result = func(*args, **kwargs)
             finally:
-                # Stop measuring time
+                if python_version >= (3, 12):
+                    # Stop counting instructions
+                    sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
+                instructions_executed = get_counter()
+                reset_counter()
                 end_time = time.perf_counter()
                 elapsed_time = end_time - start_time
                 
                 peak = customalloc.get_peak_allocated()
-                nobjects = customalloc.get_objects_allocated();
+                nobjects = customalloc.get_objects_allocated()
                 customalloc.disable()
                 
                 # Store the performance data. Only allow non-zero
@@ -86,6 +115,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
                         "hash" : hash_value,
                         "length": length,
                         "time": elapsed_time,
+                        "instructions" : instructions_executed,
                         "memory": peak,  # Peak memory usage in bytes
                         "nobjects": nobjects,
                     }

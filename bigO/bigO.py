@@ -69,13 +69,14 @@ def track(length_computation: Callable[..., int]) -> Callable:
         full_name = str((func_name, file_name))
         hash_function_values[full_name] = hash_value
 
-        # Enable instruction counting for this function
+        # Enable counting for this function
         if python_version >= (3, 12):
-            events = [sys.monitoring.events.INSTRUCTION, sys.monitoring.events.BRANCH]
+            # events = [sys.monitoring.events.INSTRUCTION, sys.monitoring.events.BRANCH]
+            events = [sys.monitoring.events.BRANCH]
             event_set = 0
             for event in events:
                 event_set |= event
-            sys.monitoring.set_local_events(TOOL_ID, func.__code__, event_set)
+            # sys.monitoring.set_local_events(TOOL_ID, func.__code__, event_set)
         
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -113,12 +114,14 @@ def track(length_computation: Callable[..., int]) -> Callable:
             
             if python_version >= (3, 12):
                 # Count instructions
-                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_instruction_counter)
+                # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_instruction_counter)
                 # Count branches
                 sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, increment_branch_counter)
+                sys.monitoring.set_events(TOOL_ID, event_set)
             try:
                 result = func(*args, **kwargs)
             finally:
+                sys.monitoring.set_events(TOOL_ID, 0)
                 end_time = time.perf_counter()
                 if python_version >= (3, 12):
                     # Stop counting instructions and branches

@@ -71,7 +71,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
 
         # Enable counting for this function
         if python_version >= (3, 12):
-            # events = [sys.monitoring.events.INSTRUCTION, sys.monitoring.events.BRANCH]
+            # events = [sys.monitoring.events.INSTRUCTION] # , sys.monitoring.events.BRANCH]
             events = [sys.monitoring.events.BRANCH]
             event_set = 0
             for event in events:
@@ -125,7 +125,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
                 end_time = time.perf_counter()
                 if python_version >= (3, 12):
                     # Stop counting instructions and branches
-                    sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
+                    # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
                     sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, None)
                 instructions_executed = get_instruction_counter()
                 branches_executed = get_branch_counter()

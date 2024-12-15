@@ -22,9 +22,11 @@ performance_data_filename = f"{system_name}_data.json"
 hash_function_values : dict[str, Any] = {}
 
 python_version = (sys.version_info[0], sys.version_info[1])
-
+# Disabled for now
+use_sys_monitoring = False
+# use_sys_monitoring = python_version >= (3,12)
 TOOL_ID = 1
-if python_version >= (3, 12):
+if use_sys_monitoring:
     sys.monitoring.use_tool_id(TOOL_ID, system_name)
 
 def set_performance_data_filename(fname: str) -> str:
@@ -70,7 +72,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
         hash_function_values[full_name] = hash_value
 
         # Enable counting for this function
-        if python_version >= (3, 12):
+        if use_sys_monitoring:
             # events = [sys.monitoring.events.INSTRUCTION] # , sys.monitoring.events.BRANCH]
             events = [sys.monitoring.events.BRANCH]
             event_set = 0
@@ -112,7 +114,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
             customalloc.reset_statistics()
             customalloc.enable()
             
-            if python_version >= (3, 12):
+            if use_sys_monitoring:
                 # Count instructions
                 # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_instruction_counter)
                 # Count branches
@@ -121,9 +123,10 @@ def track(length_computation: Callable[..., int]) -> Callable:
             try:
                 result = func(*args, **kwargs)
             finally:
-                sys.monitoring.set_events(TOOL_ID, 0)
+                if use_sys_monitoring:
+                    sys.monitoring.set_events(TOOL_ID, 0)
                 end_time = time.perf_counter()
-                if python_version >= (3, 12):
+                if use_sys_monitoring:
                     # Stop counting instructions and branches
                     # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
                     sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, None)

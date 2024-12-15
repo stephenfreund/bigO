@@ -4,11 +4,12 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from scipy.stats import linregress
 
 system_name = "bigO"
 
-def compute_aic(nobs, rss, k=2):
+def compute_aic(nobs: int, rss: int, k=2) -> float:
     """
     Compute AIC for a model.
     AIC = n * ln(RSS/n) + 2*k
@@ -128,19 +129,19 @@ def choose_best_fit(n, y):
     best = min(fits, key=lambda x: x[8])  # x[8] is the AIC
     return best
 
-def format_model_name(model_name, slope):
+def format_model_name(model_name: str, slope: float) -> str:
     # If O(n^b), format exponent
     if model_name == "O(n^b)":
         return f"O(n^{slope:.2f})"
     else:
         return model_name
 
-def remove_outliers(n, y):
+def remove_outliers(n_l: list[float], y_l: list[float]) -> tuple[np.ndarray, np.ndarray]:
     """
     Remove outliers using IQR method.
     """
-    y = np.array(y, dtype=float)
-    n = np.array(n, dtype=float)
+    y = np.array(y_l, dtype=float)
+    n = np.array(n_l, dtype=float)
     if len(y) < 4:
         return n, y
     Q1, Q3 = np.percentile(y, [25, 75])
@@ -150,9 +151,14 @@ def remove_outliers(n, y):
     mask = (y >= lower_bound) & (y <= upper_bound)
     return n[mask], y[mask]
 
-def plot_complexities_from_file(filename=f'{system_name}_data.json'):
-    with open(filename, 'r') as f:
-        data = json.load(f)
+def plot_complexities_from_file(filename: str =f'{system_name}_data.json') -> None:
+
+    try:
+        with open(filename, 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"File {filename} not found.")
+        return
         
     entries = []
     for key, records in data.items():

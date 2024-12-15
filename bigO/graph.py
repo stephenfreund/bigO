@@ -1,3 +1,4 @@
+import click
 import json
 import math
 import sys
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from scipy.stats import linregress
+from typing import Optional
 
 system_name = "bigO"
 
@@ -151,7 +153,7 @@ def remove_outliers(n_l: list[float], y_l: list[float]) -> tuple[np.ndarray, np.
     mask = (y >= lower_bound) & (y <= upper_bound)
     return n[mask], y[mask]
 
-def plot_complexities_from_file(filename: str =f'{system_name}_data.json') -> None:
+def plot_complexities_from_file(metric: str, filename: str =f'{system_name}_data.json') -> None:
 
     try:
         with open(filename, 'r') as f:
@@ -168,7 +170,7 @@ def plot_complexities_from_file(filename: str =f'{system_name}_data.json') -> No
         file_name = parts[1].strip().strip("'\"")
         
         lengths = [r["length"] for r in records]
-        times = [r["time"] for r in records]
+        times = [r[metric] for r in records]
         mems = [r["memory"] for r in records]
         
         entries.append((function_name, file_name, lengths, times, mems))
@@ -232,8 +234,28 @@ def plot_complexities_from_file(filename: str =f'{system_name}_data.json') -> No
     print(f"{filename} written.")
     # plt.show()
 
+
+@click.command()
+@click.option(
+    '--use-branches', 'metric', flag_value='branches',
+    help="Use branches as the metric for plotting."
+)
+@click.option(
+    '--use-instructions', 'metric', flag_value='instructions',
+    help="Use instructions as the metric for plotting."
+)
+@click.option(
+    '--use-time', 'metric', flag_value='time', default=True,
+    help="Use time as the default metric for plotting."
+)
+@click.option(
+    '--output-file', 'output_file', default=None,
+    help="Specify the output file to process."
+)
+def main(metric: str, output_file: Optional[str]):
+    file_name = output_file or f'{system_name}_data.json'
+    plot_complexities_from_file(metric, file_name)
+    
 if __name__ == "__main__":
-    fname = f'{system_name}_data.json'
-    if len(sys.argv) > 1:
-        fname = sys.argv[1]
-    plot_complexities_from_file(fname)
+    main()
+    

@@ -71,7 +71,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
 
         # Enable instruction counting for this function
         if python_version >= (3, 12):
-            events = [sys.monitoring.events.INSTRUCTION]
+            events = [sys.monitoring.events.INSTRUCTION, sys.monitoring.events.BRANCH]
             event_set = 0
             for event in events:
                 event_set |= event
@@ -81,14 +81,25 @@ def track(length_computation: Callable[..., int]) -> Callable:
         def wrapper(*args, **kwargs):
             
             instruction_count = 0
-            def increment_counter(*args):
+            branch_count = 0
+            
+            def increment_instruction_counter(*args):
                 nonlocal instruction_count
                 instruction_count += 1
-            def get_counter():
+            def get_instruction_counter():
                 nonlocal instruction_count
                 return instruction_count
-            def reset_counter():
+
+            def increment_branch_counter(*args):
+                nonlocal branch_count
+                branch_count += 1
+            def get_branch_counter():
+                nonlocal branch_count
+                return branch_count
+            def reset_counters():
+                nonlocal branch_count
                 nonlocal instruction_count
+                branch_count = 0
                 instruction_count = 0
                 
             import customalloc
@@ -102,16 +113,20 @@ def track(length_computation: Callable[..., int]) -> Callable:
             
             if python_version >= (3, 12):
                 # Count instructions
-                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_counter)
+                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_instruction_counter)
+                # Count branches
+                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, increment_branch_counter)
             try:
                 result = func(*args, **kwargs)
             finally:
                 end_time = time.perf_counter()
                 if python_version >= (3, 12):
-                    # Stop counting instructions
+                    # Stop counting instructions and branches
                     sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
-                instructions_executed = get_counter()
-                reset_counter()
+                    sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, None)
+                instructions_executed = get_instruction_counter()
+                branches_executed = get_branch_counter()
+                reset_counters()
                 elapsed_time = end_time - start_time
                 
                 peak = customalloc.get_peak_allocated()
@@ -127,6 +142,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
                         "length": length,
                         "time": elapsed_time,
                         "instructions" : instructions_executed,
+                        "branches": branches_executed,
                         "memory": peak,  # Peak memory usage in bytes
                         "nobjects": nobjects,
                     }

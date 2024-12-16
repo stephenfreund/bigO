@@ -1,14 +1,17 @@
+import click
 import json
 import math
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from scipy.stats import linregress
+from typing import Optional
 
 system_name = "bigO"
 
-def compute_aic(nobs, rss, k=2):
+def compute_aic(nobs: int, rss: int, k=2) -> float:
     """
     Compute AIC for a model.
     AIC = n * ln(RSS/n) + 2*k
@@ -128,19 +131,19 @@ def choose_best_fit(n, y):
     best = min(fits, key=lambda x: x[8])  # x[8] is the AIC
     return best
 
-def format_model_name(model_name, slope):
+def format_model_name(model_name: str, slope: float) -> str:
     # If O(n^b), format exponent
     if model_name == "O(n^b)":
         return f"O(n^{slope:.2f})"
     else:
         return model_name
 
-def remove_outliers(n, y):
+def remove_outliers(n_l: list[float], y_l: list[float]) -> tuple[np.ndarray, np.ndarray]:
     """
     Remove outliers using IQR method.
     """
-    y = np.array(y, dtype=float)
-    n = np.array(n, dtype=float)
+    y = np.array(y_l, dtype=float)
+    n = np.array(n_l, dtype=float)
     if len(y) < 4:
         return n, y
     Q1, Q3 = np.percentile(y, [25, 75])
@@ -150,9 +153,14 @@ def remove_outliers(n, y):
     mask = (y >= lower_bound) & (y <= upper_bound)
     return n[mask], y[mask]
 
-def plot_complexities_from_file(filename=f'{system_name}_data.json'):
-    with open(filename, 'r') as f:
-        data = json.load(f)
+def plot_complexities_from_file(metric: str, filename: str =f'{system_name}_data.json') -> None:
+
+    try:
+        with open(filename, 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"File {filename} not found.")
+        return
         
     entries = []
     for key, records in data.items():
@@ -162,7 +170,7 @@ def plot_complexities_from_file(filename=f'{system_name}_data.json'):
         file_name = parts[1].strip().strip("'\"")
         
         lengths = [r["length"] for r in records]
-        times = [r["time"] for r in records]
+        times = [r[metric] for r in records]
         mems = [r["memory"] for r in records]
         
         entries.append((function_name, file_name, lengths, times, mems))
@@ -226,8 +234,28 @@ def plot_complexities_from_file(filename=f'{system_name}_data.json'):
     print(f"{filename} written.")
     # plt.show()
 
+
+@click.command()
+@click.option(
+    '--use-branches', 'metric', flag_value='branches',
+    help="Use branches as the metric for plotting."
+)
+@click.option(
+    '--use-instructions', 'metric', flag_value='instructions',
+    help="Use instructions as the metric for plotting."
+)
+@click.option(
+    '--use-time', 'metric', flag_value='time', default=True,
+    help="Use time as the default metric for plotting."
+)
+@click.option(
+    '--output-file', 'output_file', default=None,
+    help="Specify the output file to process."
+)
+def main(metric: str, output_file: Optional[str]):
+    file_name = output_file or f'{system_name}_data.json'
+    plot_complexities_from_file(metric, file_name)
+    
 if __name__ == "__main__":
-    fname = f'{system_name}_data.json'
-    if len(sys.argv) > 1:
-        fname = sys.argv[1]
-    plot_complexities_from_file(fname)
+    main()
+    

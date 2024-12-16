@@ -47,12 +47,12 @@ def set_performance_data_filename(fname: str) -> str:
     return old_performance_data_filename
     
    
-def track(length_computation: Callable[..., int]) -> Callable:
+def track(length_function: Callable[..., int]) -> Callable:
     """
     A decorator to measure and store performance metrics of a function.
 
     Args:
-        length_computation (callable): A function that calculates the "length"
+        length_function (callable): A function that calculates the "length"
                                        of one or more arguments.
 
     Returns:
@@ -107,7 +107,7 @@ def track(length_computation: Callable[..., int]) -> Callable:
                 
             import customalloc
             # Calculate the length based on the provided computation
-            length = length_computation(*args, **kwargs)
+            length = length_function(*args, **kwargs)
 
             # Start measuring time and memory
             start_time = time.perf_counter()

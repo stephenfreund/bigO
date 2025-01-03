@@ -10,16 +10,18 @@ from collections import defaultdict
 from functools import wraps
 from typing import Any, Callable
 
+from bigO import models
+
 system_name = "bigO"
 
 # Global dictionary to store performance data
-performance_data : dict[str, list[Any]] = defaultdict(list)
+performance_data: dict[str, list[Any]] = defaultdict(list)
 
 # Where the performance data is stored.
 performance_data_filename = f"{system_name}_data.json"
 
 # Hashes of function implementations, used to discard outdated perf info for modified functions
-hash_function_values : dict[str, Any] = {}
+hash_function_values: dict[str, Any] = {}
 
 python_version = (sys.version_info[0], sys.version_info[1])
 # Disabled for now
@@ -29,10 +31,11 @@ TOOL_ID = 1
 if use_sys_monitoring:
     sys.monitoring.use_tool_id(TOOL_ID, system_name)
 
+
 def set_performance_data_filename(fname: str) -> str:
     """Changes the file name where performance data is stored
     and loads the performance data.
-    
+
     Returns the previous file name.
     """
     global performance_data_filename
@@ -40,13 +43,31 @@ def set_performance_data_filename(fname: str) -> str:
     old_performance_data_filename = performance_data_filename
     performance_data_filename = fname
     try:
-        with open(performance_data_filename, 'r') as infile:
+        with open(performance_data_filename, "r") as infile:
             performance_data = json.load(infile)
     except FileNotFoundError:
         performance_data = dict()
     return old_performance_data_filename
-    
-   
+
+
+def function_hash_value(func: Callable) -> str:
+    """
+    Returns the hash value of the function implementation.
+    """
+    code = marshal.dumps(func.__code__)
+    return hashlib.sha256(code).hexdigest()
+
+
+def function_full_name(func: Callable) -> str:
+    """
+    Returns the full name of the function (file + name).
+    """
+    func_name = func.__name__
+    module = inspect.getmodule(func)
+    file_name = module.__file__ if module and module.__file__ else "<unknown>"
+    return str((func_name, file_name))
+
+
 def track(length_function: Callable[..., int]) -> Callable:
     """
     A decorator to measure and store performance metrics of a function.
@@ -58,54 +79,20 @@ def track(length_function: Callable[..., int]) -> Callable:
     Returns:
         callable: The decorated function.
     """
+
     def decorator(func: Callable) -> Callable:
         # Store a hash of the code to enable discarding old perf data if the
         # function has changed
-        code = marshal.dumps(func.__code__)
-        hash_value = hashlib.sha256(code).hexdigest()
+        hash_value = function_hash_value(func)
 
         # Get the full name of the function (file + name), and save the hash value.
-        func_name = func.__name__
-        module = inspect.getmodule(func)
-        file_name = module.__file__ if module and module.__file__ else "<unknown>"
-        full_name = str((func_name, file_name))
+        full_name = function_full_name(func)
         hash_function_values[full_name] = hash_value
 
-        # Enable counting for this function
-        if use_sys_monitoring:
-            # events = [sys.monitoring.events.INSTRUCTION] # , sys.monitoring.events.BRANCH]
-            events = [sys.monitoring.events.BRANCH]
-            event_set = 0
-            for event in events:
-                event_set |= event
-            # sys.monitoring.set_local_events(TOOL_ID, func.__code__, event_set)
-        
         @wraps(func)
         def wrapper(*args, **kwargs):
-            
-            instruction_count = 0
-            branch_count = 0
-            
-            def increment_instruction_counter(*args):
-                nonlocal instruction_count
-                instruction_count += 1
-            def get_instruction_counter():
-                nonlocal instruction_count
-                return instruction_count
-
-            def increment_branch_counter(*args):
-                nonlocal branch_count
-                branch_count += 1
-            def get_branch_counter():
-                nonlocal branch_count
-                return branch_count
-            def reset_counters():
-                nonlocal branch_count
-                nonlocal instruction_count
-                branch_count = 0
-                instruction_count = 0
-                
             import customalloc
+
             # Calculate the length based on the provided computation
             length = length_function(*args, **kwargs)
 
@@ -113,48 +100,70 @@ def track(length_function: Callable[..., int]) -> Callable:
             start_time = time.perf_counter()
             customalloc.reset_statistics()
             customalloc.enable()
-            
-            if use_sys_monitoring:
-                # Count instructions
-                # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, increment_instruction_counter)
-                # Count branches
-                sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, increment_branch_counter)
-                sys.monitoring.set_events(TOOL_ID, event_set)
+
             try:
                 result = func(*args, **kwargs)
             finally:
-                if use_sys_monitoring:
-                    sys.monitoring.set_events(TOOL_ID, 0)
                 end_time = time.perf_counter()
-                if use_sys_monitoring:
-                    # Stop counting instructions and branches
-                    # sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.INSTRUCTION, None)
-                    sys.monitoring.register_callback(TOOL_ID, sys.monitoring.events.BRANCH, None)
-                instructions_executed = get_instruction_counter()
-                branches_executed = get_branch_counter()
-                reset_counters()
                 elapsed_time = end_time - start_time
-                
+
                 peak = customalloc.get_peak_allocated()
                 nobjects = customalloc.get_objects_allocated()
                 customalloc.disable()
-                
+
                 # Store the performance data. Only allow non-zero
                 # lengths to avoid issues downstream when computing
                 # logs of lengths.
                 if length > 0:
                     perf_data = {
-                        "hash" : hash_value,
+                        "hash": hash_value,
                         "length": length,
                         "time": elapsed_time,
-                        "instructions" : instructions_executed,
-                        "branches": branches_executed,
                         "memory": peak,  # Peak memory usage in bytes
                         "nobjects": nobjects,
                     }
                     performance_data[full_name].append(perf_data)
             return result
+
         return wrapper
+
+    return decorator
+
+
+def check(
+    length_function: Callable[..., int],
+    time_bound: str | None = None,
+    mem_bound: str | None = None,
+    frequency: int = 25,
+) -> Callable:
+    def decorator(func: Callable) -> Callable:
+        full_name = function_full_name(func)
+        tracked = track(length_function)(func)
+        time_model = models.get_model(time_bound) if time_bound else None
+        mem_model = models.get_model(mem_bound) if mem_bound else None
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                result = tracked(*args, **kwargs)
+            finally:
+                pass
+
+            if len(performance_data[full_name]) % frequency == 0:
+                lengths = [entry["length"] for entry in performance_data[full_name]]
+                if time_model:
+                    times = [entry["time"] for entry in performance_data[full_name]]
+                    models.check_bound(lengths, times, time_model)
+                if mem_model:
+                    memories = [
+                        entry["memory"] for entry in performance_data[full_name]
+                    ]
+                    models.check_bound(lengths, memories, mem_model)
+
+            return result
+
+        return wrapper
+
     return decorator
 
 
@@ -167,7 +176,7 @@ def save_performance_data() -> None:
     # Load any saved data into a dictionary.
     global performance_data_filename
     try:
-        with open(performance_data_filename, 'r') as infile:
+        with open(performance_data_filename, "r") as infile:
             old_data = json.load(infile)
         # Discard any outdated entries.
         for full_name in old_data:
@@ -178,7 +187,7 @@ def save_performance_data() -> None:
                     if entry["hash"] == current_hash:
                         validated.append(entry)
                 old_data[full_name] = validated
-            
+
     except FileNotFoundError:
         old_data = {}
         pass
@@ -192,6 +201,6 @@ def save_performance_data() -> None:
         else:
             # Key only exists in old_data; add it to performance_data
             performance_data[key] = value_list
-    
+
     with open(performance_data_filename, "w") as f:
         json.dump(performance_data, f, indent=4)

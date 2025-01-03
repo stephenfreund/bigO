@@ -4,6 +4,7 @@ import sys
 from typing import Callable, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 from scipy.optimize import curve_fit
 
@@ -14,7 +15,6 @@ class Model:
     def __init__(self, name: str, func: Callable):
         self.name = name
         self.func = func
-        self.format = format
         self.param_count = func.__code__.co_argcount - 1  # Subtract 1 for 'n'
 
     def __call__(self, n, *args):
@@ -48,6 +48,7 @@ class FittedModel:
             return np.inf
 
         aic = 2 * k + n_points * np.log(rss / n_points)
+        print(k, rss, n_points, aic)
         return aic
 
     def replace_k(self, name):
@@ -76,9 +77,9 @@ model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b)
 model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b)
 model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (np.log(n) ** 2) + b)
 model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (np.log(n) ** 3) + b)
-model_n_log_n_power_k = Model(
-    "n*(log(n))**k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b
-)
+# model_n_log_n_power_k = Model(
+#     "n*(log(n))**k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b
+# )
 
 # List of models
 models = [
@@ -145,30 +146,46 @@ def leq(fitted_model_1, fitted_model_2):
     return rank(fitted_model_1) <= rank(fitted_model_2)
 
 
-def fit_model(n, y, model) -> Tuple[FittedModel, float]:
-    params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count)
+def fit_model(n, y, model) -> FittedModel:
+    params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count, maxfev=10000)
     fitted = FittedModel(model=model, params=params)
-    aic = fitted.aic(n, y)
-    return fitted, aic
+    return fitted
 
 
-def fit_models(n, y) -> List[Tuple[FittedModel, float]]:
+def fit_models(n, y) -> List[FittedModel]:
     """Fit models to data and order by increasing aic. Return list of (model, aic) tuples."""
-    results = []
-
-    for model in models:
-        try:
-            fitted, aic = fit_model(n, y, model)
-            results.append((fitted, aic))
-        except Exception as e:
-            print(f"Failed to fit {model} model: {e}")
-
-    results.sort(key=lambda x: x[1])
-    return results
+    return [fit_model(n, y, model) for model in models]
 
 
-def better_fit_pvalue(
-    n, y, a: FittedModel, b: FittedModel, trials=1000  # low trials to start with
+def check_bound(n, y, bound):
+    lengths, y = remove_outliers(n, y)
+    print(lengths, y)
+    fits = fit_models(lengths, y)
+    bound_model_fit = fit_model(lengths, y, bound)
+
+    print(bound_model_fit, bound_model_fit.aic(lengths, y))
+
+    fitted_models = pd.DataFrame(
+        [
+            (
+                fitted,
+                fitted.aic(lengths, y),
+                pvalue_for_better_fit(fitted, bound_model_fit, lengths, y),
+            )
+            for fitted in fits
+        ],
+        columns=["model", "aic", "pvalue"],
+    )
+
+    fitted_models = fitted_models.sort_values(by="aic", ascending=True)
+    fitted_models["rank"] = fitted_models["model"].apply(rank)
+    fitted_models = fitted_models[fitted_models["rank"] > rank(bound_model_fit)]
+
+    print(fitted_models)
+
+
+def pvalue_for_better_fit(
+    a: FittedModel, b: FittedModel, n, y, trials=1000  # low trials to start with
 ):
     """
     Return pvalue that model 'a' is a better fit than model 'b'.
@@ -196,57 +213,61 @@ def better_fit_pvalue(
     return s / trials
 
 
-def better_fit_pvalue_vectorized(
-    n, y, a: FittedModel, b: FittedModel, trials=1000  # low trials to start with
-):
+# def pvalue_for_better_fit(
+#     a: FittedModel, b: FittedModel, n, y, trials=1000  # low trials to start with
+# ):
+#     """
+#     Vectorized version of pvalue_for_better_fit.
+#     Return pvalue that model 'a' is a better fit than model 'b'.
+#     Technique from: https://aclanthology.org/D12-1091.pdf
+#     """
+#     # Make resamples
+#     bootstrap_indices = np.random.choice(len(n), size=(trials, len(n)), replace=True)
 
-    # Original delta
-    delta = b.aic(n, y) - a.aic(n, y)
+#     data = np.column_stack((n, y))
+#     # a 3D array with shape (trials, n_samples, 2)
+#     resamples = data[bootstrap_indices]
 
-    # Make resamples
-    bootstrap_indices = np.random.choice(len(n), size=(trials, len(n)), replace=True)
+#     # Vectors of n and y
+#     n2 = resamples[:, :, 0]  # Shape: (trials, n_samples)
+#     y2 = resamples[:, :, 1]  # Shape: (trials, n_samples)
 
-    data = np.column_stack((n, y))
-    # a 3D array with shape (trials, n_samples, 2)
-    resamples = data[bootstrap_indices]
+#     # Ensure that 'a.func' and 'b.func' can handle arrays of shape (trials, n_samples)
+#     residuals_a = y2 - a.model.func(n2, *a.params)  # Shape: (trials, n_samples)
+#     residuals_b = y2 - b.model.func(n2, *b.params)  # Shape: (trials, n_samples
 
-    # Vectors of n and y
-    n2 = resamples[:, :, 0]  # Shape: (trials, n_samples)
-    y2 = resamples[:, :, 1]  # Shape: (trials, n_samples)
+#     # Compute aics
+#     aic_a = 2 * a.model.param_count + len(n2) * np.log(
+#         np.sum(residuals_a**2, axis=1) / len(n2)
+#     )
+#     aic_b = 2 * b.model.param_count + len(n2) * np.log(
+#         np.sum(residuals_b**2, axis=1) / len(n2)
+#     )
 
-    # Ensure that 'a.func' and 'b.func' can handle arrays of shape (trials, n_samples)
-    residuals_a = y2 - a.model.func(n2, *a.params)  # Shape: (trials, n_samples)
-    residuals_b = y2 - b.model.func(n2, *b.params)  # Shape: (trials, n_samples
+#     # Original delta
+#     delta = b.aic(n, y) - a.aic(n, y)
 
-    # Compute aics
-    aic_a = 2 * a.model.param_count + len(n2) * np.log(
-        np.sum(residuals_a**2, axis=1) / len(n2)
-    )
-    aic_b = 2 * b.model.param_count + len(n2) * np.log(
-        np.sum(residuals_b**2, axis=1) / len(n2)
-    )
+#     # Compute bootstrap_delta and count
+#     bootstrap_delta = aic_b - aic_a  # Shape: (trials,)
+#     s = np.sum(bootstrap_delta > (2 * delta))  # Scalar
 
-    # Compute bootstrap_delta and count
-    bootstrap_delta = aic_b - aic_a  # Shape: (trials,)
-    s = np.sum(bootstrap_delta > (2 * delta))  # Scalar
-
-    return s / trials
+#     return s / trials
 
 
-def choose_best_fit(n, y) -> Tuple[List[Tuple[FittedModel, float]], float]:
-    """
-    Return the fitted models rank and aic, and the pvalue that the first is better than second.
-    """
-    if len(n) < 2:
-        return [], 1.0
+# def choose_best_fit(n, y) -> Tuple[List[Tuple[FittedModel, float]], float]:
+#     """
+#     Return the fitted models rank and aic, and the pvalue that the first is better than second.
+#     """
+#     if len(n) < 2:
+#         return [], 1.0
 
-    results = fit_models(n, y)
-    best_fit, _ = results[0]
-    second_best_fit, _ = results[1]
+#     results = fit_models(n, y)
+#     best_fit, _ = results[0]
+#     second_best_fit, _ = results[1]
 
-    pvalue = better_fit_pvalue_vectorized(n, y, best_fit, second_best_fit)
+#     pvalue = better_fit_pvalue_vectorized(n, y, best_fit, second_best_fit)
 
-    return results, pvalue
+#     return results, pvalue
 
 
 def remove_outliers(n, y):
@@ -301,16 +322,17 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
     for i, (func, filepath, lengths, times, mems) in enumerate(entries):
         # Remove outliers
         n_time, y_time = remove_outliers(lengths, times)
-        time_fits, time_pvalue = choose_best_fit(n_time, y_time)
+        time_fits = fit_models(n_time, y_time)
+        time_fits.sort(key=lambda x: x.aic(n_time, y_time))
 
         n_mem, y_mem = remove_outliers(lengths, mems)
-        mem_fits, mem_pvalue = choose_best_fit(n_mem, y_mem)
+        mem_fits = fit_models(n_mem, y_mem)
 
         # Time plot (axes[i,0])
         ax_time = axes[i, 0]
         ax_time.plot(n_time, y_time, "o", color="blue", label="Data (outliers removed)")
         if len(time_fits) > 0:
-            best_fit, best_aic = time_fits[0]
+            best_fit = time_fits[0]
             fit_n = np.sort(n_time)
             fit_y = best_fit.predict(fit_n)
 
@@ -326,13 +348,15 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
             for j in np.arange(1, 3):
                 ax_time.plot(
                     fit_n,
-                    time_fits[j][0].predict(fit_n),
+                    time_fits[j].predict(fit_n),
                     "--",
                     color="blue",
                     linewidth=0.5,
-                    label=f"{j+1}nd Fit: {time_fits[j][0]}",
+                    label=f"{j+1}nd Fit: {time_fits[j]}",
                 )
 
+            time_pvalue = 0
+            best_aic = best_fit.aic(n_time, y_time)
             title = f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse(n_time,y_time):.3f} pvalue={time_pvalue:.3f}"
         else:
             title = f"{func} (Time): No fit"
@@ -342,7 +366,7 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
         ax_time.set_title(title, fontsize=12)
         ax_time.legend()
 
-        if plot_memory:
+        if False and plot_memory:
             # Memory plot (axes[i,1])
             ax_mem = axes[i, 1]
             ax_mem.plot(n_mem, y_mem, "o", color="red", label="Data (outliers removed)")

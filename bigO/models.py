@@ -48,7 +48,7 @@ class FittedModel:
             return np.inf
 
         aic = 2 * k + n_points * np.log(rss / n_points)
-        print(k, rss, n_points, aic)
+        # print(k, rss, n_points, aic)
         return aic
 
     def replace_k(self, name):
@@ -157,13 +157,12 @@ def fit_models(n, y) -> List[FittedModel]:
     return [fit_model(n, y, model) for model in models]
 
 
-def check_bound(n, y, bound):
+def check_bound(n, y, bound) -> Tuple[FittedModel, List[Tuple[FittedModel, float]]]:
     lengths, y = remove_outliers(n, y)
-    print(lengths, y)
     fits = fit_models(lengths, y)
     bound_model_fit = fit_model(lengths, y, bound)
 
-    print(bound_model_fit, bound_model_fit.aic(lengths, y))
+    # print(bound_model_fit, bound_model_fit.aic(lengths, y))
 
     fitted_models = pd.DataFrame(
         [
@@ -181,7 +180,11 @@ def check_bound(n, y, bound):
     fitted_models["rank"] = fitted_models["model"].apply(rank)
     fitted_models = fitted_models[fitted_models["rank"] > rank(bound_model_fit)]
 
-    print(fitted_models)
+    better_with_pvalue = fitted_models[fitted_models["pvalue"] < 0.05]
+    return bound_model_fit, [
+        (row["model"], row["pvalue"])
+        for _, row in better_with_pvalue[["model", "pvalue"]].iterrows()
+    ]
 
 
 def pvalue_for_better_fit(
@@ -213,6 +216,7 @@ def pvalue_for_better_fit(
     return s / trials
 
 
+# This isn't working at the moment -- haven't dug into why...
 # def pvalue_for_better_fit(
 #     a: FittedModel, b: FittedModel, n, y, trials=1000  # low trials to start with
 # ):

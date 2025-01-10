@@ -66,7 +66,7 @@ class FittedModel:
 
 
 # Model definitions
-model_constant = Model("1", lambda n, a: a)
+model_constant = Model("1", lambda n, a: np.ones(np.shape(n)) * a)
 model_log_log_n = Model("log(log(n))", lambda n, a, b: a * np.log(np.log(n)) + b)
 model_log_n = Model("log(n)", lambda n, a, b: a * np.log(n) + b)
 model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b)

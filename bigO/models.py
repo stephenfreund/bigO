@@ -184,7 +184,9 @@ def check_bound(n, y, bound) -> Tuple[FittedModel, List[Tuple[FittedModel, float
     return bound_model_fit, [
         (row["model"], row["pvalue"])
         for _, row in better_with_pvalue[["model", "pvalue"]].iterrows()
-    ]
+        # for _, row in fitted_models[["model", "pvalue"]].iterrows()
+    ], [(row["model"], row["pvalue"])
+        for _, row in fitted_models[["model", "pvalue"]].iterrows()]
 
 
 def pvalue_for_better_fit(

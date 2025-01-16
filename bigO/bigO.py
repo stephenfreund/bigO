@@ -137,13 +137,23 @@ def track(length_function: Callable[..., int]) -> Callable:
     return decorator
 
 
-def plot_complexities(n_time, y_time, spec_fit, time_fits):
+def plot_complexities(n_time, y_time, spec_fit, time_fits, func):
+    
+    color_list = ["green", "red", "purple", "brown", "pink", "gray", "olive", "cyan", "yellow", "black", "magenta", "aquamarine", "mediumseagreen"]
+
     sns.set_style("whitegrid")
+
+    # print("N", n_time)
+    # print("Y", y_time)
 
     # Time plot (axes[i,0])
     fig, ax_time = plt.subplots(figsize=(6, 4))
     ax_time.plot(n_time, y_time, "o", color="blue", label="Data (outliers removed)")
     fit_n = np.sort(n_time)
+
+    # print(fit_n)
+    # print(spec_fit.predict(fit_n))
+
     ax_time.plot(
         fit_n,
         spec_fit.predict(fit_n),
@@ -153,12 +163,12 @@ def plot_complexities(n_time, y_time, spec_fit, time_fits):
         label=f"Spec: {spec_fit}",
     )
 
-    for fitted in time_fits:
+    for fitted, color in zip(time_fits, color_list):
         ax_time.plot(
             fit_n,
             fitted.predict(fit_n),
             "-",
-            color="blue",
+            color=color,
             linewidth=1,
             label=f"Fit: {fitted}",
         )
@@ -168,10 +178,12 @@ def plot_complexities(n_time, y_time, spec_fit, time_fits):
     ax_time.legend()
 
     plt.tight_layout()
-    filename = f"{system_name}.pdf"
+    filename = f"{func.__name__}.pdf"
     plt.savefig(filename)
     print(f"{filename} written.")
     # plt.show()
+
+    return
 
 
 def check(
@@ -180,6 +192,7 @@ def check(
     # mem_bound: str | None = None,
     frequency: int = 25,
 ) -> Callable:
+    
     def decorator(func: Callable) -> Callable:
         full_name = function_full_name(func)
         tracked = track(length_function)(func)
@@ -189,30 +202,34 @@ def check(
         @wraps(func)
         def wrapper(*args, **kwargs):
             try:
+                # print("here")
                 result = tracked(*args, **kwargs)
+            # except Exception as e:
+            #     print(e)
             finally:
                 pass
 
             if len(performance_data[full_name]) % frequency == 0:
+
                 lengths = [entry["length"] for entry in performance_data[full_name]]
+
                 if time_model:
+
                     times = [entry["time"] for entry in performance_data[full_name]]
-                    spec_model_fit, slower_but_better_fits = models.check_bound(
+
+                    spec_model_fit, slower_but_better_fits, all_fits = models.check_bound(
                         lengths, times, time_model
                     )
+
                     if slower_but_better_fits:
+
+                        to_graph = slower_but_better_fits
+
                         as_str = "\n".join(
                             [
                                 f"{str(model)} (pvalue={pvalue:.3f})"
                                 for model, pvalue in slower_but_better_fits
                             ]
-                        )
-
-                        plot_complexities(
-                            lengths,
-                            times,
-                            spec_model_fit,
-                            [fitted for fitted, _ in slower_but_better_fits],
                         )
 
                         raise ValueError(
@@ -223,7 +240,8 @@ def check(
                                 ```
                                 {as_str}
                                 ```
-                                See {system_name}.pdf for a plot of the data and fits."""
+                                """
+                                # See {system_name}.pdf for a plot of the data and fits."""
                             ).format(
                                 full_name=full_name,
                                 time_bound=time_bound,
@@ -231,6 +249,20 @@ def check(
                                 system_name=system_name,
                             )
                         )
+                    
+                    else:
+                        to_graph = all_fits
+                    
+                    plot_complexities(
+                            lengths,
+                            times,
+                            spec_model_fit,
+                            [fitted for fitted, _ in to_graph],
+                            func
+                        )
+
+                else:
+                    print("Invalid time bound")
 
                 # if mem_model:
                 #     memories = [

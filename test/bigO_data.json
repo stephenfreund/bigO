@@ -1,0 +1,179 @@
+{
+    "('linear_function_3', '/mnt/c/Users/kylee/thesis/bigO/test/test_bounds.py')": [
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1478846,
+            "time": 2.6875845999999797,
+            "memory": 23661576,
+            "nobjects": 203
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1755647,
+            "time": 3.031726699999979,
+            "memory": 28090392,
+            "nobjects": 203
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1758641,
+            "time": 3.0802904999999896,
+            "memory": 28138296,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1752081,
+            "time": 3.26154200000002,
+            "memory": 28033336,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1612470,
+            "time": 3.161162900000022,
+            "memory": 25799560,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1856265,
+            "time": 3.6351527000000488,
+            "memory": 29700280,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1135165,
+            "time": 2.2335734000000116,
+            "memory": 18162680,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1734056,
+            "time": 3.353427300000021,
+            "memory": 27744936,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1214495,
+            "time": 2.1822005999999874,
+            "memory": 19431960,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 249012,
+            "time": 0.2079279000000156,
+            "memory": 3984232,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 874129,
+            "time": 1.4780532999999991,
+            "memory": 13986104,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 392542,
+            "time": 0.35203439999997954,
+            "memory": 6280712,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1585698,
+            "time": 3.007236599999999,
+            "memory": 25371208,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1084776,
+            "time": 1.940216399999997,
+            "memory": 17356456,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 335431,
+            "time": 0.33721779999996215,
+            "memory": 5366936,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 693895,
+            "time": 1.1681858000000034,
+            "memory": 11102360,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1482102,
+            "time": 2.679607600000054,
+            "memory": 23713672,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 2106858,
+            "time": 3.7093653999999674,
+            "memory": 33709768,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 2088715,
+            "time": 3.6678457999999523,
+            "memory": 33419480,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 266481,
+            "time": 0.21515450000003966,
+            "memory": 4263736,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 994635,
+            "time": 1.73158049999995,
+            "memory": 15914200,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 1679324,
+            "time": 2.9161427999999887,
+            "memory": 26869224,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 2145238,
+            "time": 3.9859373999999548,
+            "memory": 34323848,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 937908,
+            "time": 1.8805452999999943,
+            "memory": 15006568,
+            "nobjects": 204
+        },
+        {
+            "hash": "483d1bc166c0dcf450e1c66916ee2c5c6d9e055731ffb3e0aff0600270aa40c6",
+            "length": 2066281,
+            "time": 4.487021900000002,
+            "memory": 33060536,
+            "nobjects": 204
+        }
+    ]
+}

@@ -30,7 +30,9 @@ dependencies = [
 "numpy",
 "scipy",
 "matplotlib",
-"seaborn"
+"seaborn",
+"termcolor",
+"click"
 ]
 
 [project.urls]

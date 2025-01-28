@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 from math import e
 import sys
@@ -5,8 +6,11 @@ from typing import Callable, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import scipy
 import seaborn as sns
 from scipy.optimize import curve_fit
+
+from bigO.output import log_timer
 
 system_name = "bigO"
 
@@ -25,23 +29,39 @@ class Model:
 
 
 class FittedModel:
-    def __init__(self, model: Model, params: np.ndarray):
+    def __init__(
+        self,
+        model: Model,
+        params: np.ndarray,
+        n: np.ndarray,
+        y: np.ndarray,
+    ):
         self.model = model
         self.params = params
+        self.n = n
+        self.y = y
 
-    def predict(self, n):
+    def predict(self, n: np.ndarray | None = None):
+        if n is None:
+            n = self.n
         return self.model.func(n, *self.params)
 
-    def residuals(self, n, y):
+    def residuals(self, n: np.ndarray | None = None, y: np.ndarray | None = None):
+        if n is None:
+            n = self.n
+        if y is None:
+            y = self.y
         return y - self.predict(n)
 
-    def mse(self, n, y):
-        return np.mean(self.residuals(n, y) ** 2)
+    def mse(self):
+        return np.mean(self.residuals() ** 2)
 
-    def aic(self, n, y):
+    def aic(self, n: np.ndarray | None = None, y: np.ndarray | None = None):
         k = len(self.params)  # Number of parameters
         residuals = self.residuals(n, y)
         rss = np.sum(residuals**2)  # Residual sum of squares
+        if y is None:
+            y = self.y
         n_points = len(y)  # Number of data points
 
         if n_points < 2 or rss <= 0:
@@ -65,18 +85,25 @@ class FittedModel:
         return f"{self.params[0]} * {str(self)} + {self.params[1]}"
 
 
+def safe_log(x):
+    x = np.asarray(x)
+    result = np.full_like(x, -np.inf, dtype=np.float64)  # Initialize with -inf
+    np.log(x, where=(x > 0), out=result)
+    return result
+
+
 # Model definitions
 model_constant = Model("1", lambda n, a: np.ones(np.shape(n)) * a)
-model_log_log_n = Model("log(log(n))", lambda n, a, b: a * np.log(np.log(n)) + b)
-model_log_n = Model("log(n)", lambda n, a, b: a * np.log(n) + b)
+model_log_log_n = Model("log(log(n))", lambda n, a, b: a * safe_log(safe_log(n)) + b)
+model_log_n = Model("log(n)", lambda n, a, b: a * safe_log(n) + b)
 model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b)
 model_linear_n = Model("n", lambda n, a, b: a * n + b)
-model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * np.log(n) + b)
+model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * safe_log(n) + b)
 model_n_squared = Model("n**2", lambda n, a, b: a * n**2 + b)
 model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b)
 model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b)
-model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (np.log(n) ** 2) + b)
-model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (np.log(n) ** 3) + b)
+model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (safe_log(n) ** 2) + b)
+model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (safe_log(n) ** 3) + b)
 # model_n_log_n_power_k = Model(
 #     "n*(log(n))**k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b
 # )
@@ -97,7 +124,7 @@ models = [
 ]
 
 
-def get_model(name):
+def get_model(name: str) -> Model:
     if not name.startswith("O(") or not name.endswith(")"):
         print(f"Invalid model name: {name}.  Should be of the form O(...)")
         return None
@@ -114,7 +141,7 @@ def get_model(name):
         k = float(name[3:])
         return Model(name, lambda n, a, b: a * n**k + b)
 
-    return None
+    raise ValueError(f"Unknown model: {name}")
 
 
 # TODO: Check the ranks for n^k.
@@ -148,21 +175,26 @@ def leq(fitted_model_1, fitted_model_2):
 
 def fit_model(n, y, model) -> FittedModel:
     params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count, maxfev=10000)
-    fitted = FittedModel(model=model, params=params)
+    fitted = FittedModel(model=model, params=params, n=n, y=y)
     return fitted
 
 
 def fit_models(n, y) -> List[FittedModel]:
     """Fit models to data and order by increasing aic. Return list of (model, aic) tuples."""
-    return [fit_model(n, y, model) for model in models]
+    fits = [fit_model(n, y, model) for model in models]
+    return sorted(fits, key=lambda x: x.aic())
 
 
-def check_bound(n, y, bound) -> Tuple[FittedModel, List[Tuple[FittedModel, float]]]:
+@dataclass
+class CheckBoundResult:
+    declared_bound_fit: FittedModel
+    better_models: pd.DataFrame
+
+
+def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     lengths, y = remove_outliers(n, y)
     fits = fit_models(lengths, y)
     bound_model_fit = fit_model(lengths, y, bound)
-
-    # print(bound_model_fit, bound_model_fit.aic(lengths, y))
 
     fitted_models = pd.DataFrame(
         [
@@ -179,24 +211,28 @@ def check_bound(n, y, bound) -> Tuple[FittedModel, List[Tuple[FittedModel, float
     fitted_models = fitted_models.sort_values(by="aic", ascending=True)
     fitted_models["rank"] = fitted_models["model"].apply(rank)
     fitted_models = fitted_models[fitted_models["rank"] > rank(bound_model_fit)]
+    better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 
-    better_with_pvalue = fitted_models[fitted_models["pvalue"] < 0.05]
-    return bound_model_fit, [
-        (row["model"], row["pvalue"])
-        for _, row in better_with_pvalue[["model", "pvalue"]].iterrows()
-        # for _, row in fitted_models[["model", "pvalue"]].iterrows()
-    ], [(row["model"], row["pvalue"])
-        for _, row in fitted_models[["model", "pvalue"]].iterrows()]
+    return CheckBoundResult(
+        bound_model_fit,
+        better_models,
+    )
+
+
+def infer_bound(n: np.ndarray, y: np.ndarray) -> List[FittedModel]:
+    lengths, y = remove_outliers(n, y)
+    fits = fit_models(lengths, y)
+    return fits
 
 
 def pvalue_for_better_fit(
     a: FittedModel, b: FittedModel, n, y, trials=1000  # low trials to start with
-):
+) -> float:
     """
     Return pvalue that model 'a' is a better fit than model 'b'.
     Technique from: https://aclanthology.org/D12-1091.pdf
     """
-    delta = b.aic(n, y) - a.aic(n, y)
+    delta = b.aic() - a.aic()
 
     bootstrap_indices = np.random.choice(len(n), size=(trials, len(n)), replace=True)
 
@@ -216,64 +252,6 @@ def pvalue_for_better_fit(
         if bootstrap_delta > 2 * delta:
             s += 1
     return s / trials
-
-
-# This isn't working at the moment -- haven't dug into why...
-# def pvalue_for_better_fit(
-#     a: FittedModel, b: FittedModel, n, y, trials=1000  # low trials to start with
-# ):
-#     """
-#     Vectorized version of pvalue_for_better_fit.
-#     Return pvalue that model 'a' is a better fit than model 'b'.
-#     Technique from: https://aclanthology.org/D12-1091.pdf
-#     """
-#     # Make resamples
-#     bootstrap_indices = np.random.choice(len(n), size=(trials, len(n)), replace=True)
-
-#     data = np.column_stack((n, y))
-#     # a 3D array with shape (trials, n_samples, 2)
-#     resamples = data[bootstrap_indices]
-
-#     # Vectors of n and y
-#     n2 = resamples[:, :, 0]  # Shape: (trials, n_samples)
-#     y2 = resamples[:, :, 1]  # Shape: (trials, n_samples)
-
-#     # Ensure that 'a.func' and 'b.func' can handle arrays of shape (trials, n_samples)
-#     residuals_a = y2 - a.model.func(n2, *a.params)  # Shape: (trials, n_samples)
-#     residuals_b = y2 - b.model.func(n2, *b.params)  # Shape: (trials, n_samples
-
-#     # Compute aics
-#     aic_a = 2 * a.model.param_count + len(n2) * np.log(
-#         np.sum(residuals_a**2, axis=1) / len(n2)
-#     )
-#     aic_b = 2 * b.model.param_count + len(n2) * np.log(
-#         np.sum(residuals_b**2, axis=1) / len(n2)
-#     )
-
-#     # Original delta
-#     delta = b.aic(n, y) - a.aic(n, y)
-
-#     # Compute bootstrap_delta and count
-#     bootstrap_delta = aic_b - aic_a  # Shape: (trials,)
-#     s = np.sum(bootstrap_delta > (2 * delta))  # Scalar
-
-#     return s / trials
-
-
-# def choose_best_fit(n, y) -> Tuple[List[Tuple[FittedModel, float]], float]:
-#     """
-#     Return the fitted models rank and aic, and the pvalue that the first is better than second.
-#     """
-#     if len(n) < 2:
-#         return [], 1.0
-
-#     results = fit_models(n, y)
-#     best_fit, _ = results[0]
-#     second_best_fit, _ = results[1]
-
-#     pvalue = better_fit_pvalue_vectorized(n, y, best_fit, second_best_fit)
-
-#     return results, pvalue
 
 
 def remove_outliers(n, y):
@@ -363,7 +341,7 @@ def plot_complexities_from_file(filename=f"{system_name}_data.json"):
 
             time_pvalue = 0
             best_aic = best_fit.aic(n_time, y_time)
-            title = f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse(n_time,y_time):.3f} pvalue={time_pvalue:.3f}"
+            title = f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse():.3f} pvalue={time_pvalue:.3f}"
         else:
             title = f"{func} (Time): No fit"
 

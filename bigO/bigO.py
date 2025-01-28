@@ -2,27 +2,28 @@ import atexit
 import hashlib
 import inspect
 import json
-import textwrap
+import random
 import time
 import marshal
 import sys
 
 from collections import defaultdict
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
 
-from matplotlib import pyplot as plt
-from matplotlib.axes import Axes
-import numpy as np
-
-from bigO import models
-
-import seaborn as sns
 
 system_name = "bigO"
 
+
+class FunctionData(TypedDict):
+    tests: dict[str, str]
+    observations: list[Any]
+
+
 # Global dictionary to store performance data
-performance_data: dict[str, list[Any]] = defaultdict(list)
+performance_data: dict[str, FunctionData] = defaultdict(
+    lambda: FunctionData(tests={}, observations=[])
+)
 
 # Where the performance data is stored.
 performance_data_filename = f"{system_name}_data.json"
@@ -129,7 +130,7 @@ def track(length_function: Callable[..., int]) -> Callable:
                         "memory": peak,  # Peak memory usage in bytes
                         "nobjects": nobjects,
                     }
-                    performance_data[full_name].append(perf_data)
+                    performance_data[full_name]["observations"].append(perf_data)
             return result
 
         return wrapper
@@ -137,140 +138,56 @@ def track(length_function: Callable[..., int]) -> Callable:
     return decorator
 
 
-def plot_complexities(n_time, y_time, spec_fit, time_fits, func):
-    
-    color_list = ["green", "red", "purple", "brown", "pink", "gray", "olive", "cyan", "yellow", "black", "magenta", "aquamarine", "mediumseagreen"]
-
-    sns.set_style("whitegrid")
-
-    # print("N", n_time)
-    # print("Y", y_time)
-
-    # Time plot (axes[i,0])
-    fig, ax_time = plt.subplots(figsize=(6, 4))
-    ax_time.plot(n_time, y_time, "o", color="blue", label="Data (outliers removed)")
-    fit_n = np.sort(n_time)
-
-    # print(fit_n)
-    # print(spec_fit.predict(fit_n))
-
-    ax_time.plot(
-        fit_n,
-        spec_fit.predict(fit_n),
-        "-",
-        color="orange",
-        linewidth=1,
-        label=f"Spec: {spec_fit}",
-    )
-
-    for fitted, color in zip(time_fits, color_list):
-        ax_time.plot(
-            fit_n,
-            fitted.predict(fit_n),
-            "-",
-            color=color,
-            linewidth=1,
-            label=f"Fit: {fitted}",
-        )
-
-    ax_time.set_xlabel("Input Size (n)")
-    ax_time.set_ylabel("Time")
-    ax_time.legend()
-
-    plt.tight_layout()
-    filename = f"{func.__name__}.pdf"
-    plt.savefig(filename)
-    print(f"{filename} written.")
-    # plt.show()
-
-    return
-
-
 def check(
     length_function: Callable[..., int],
     time_bound: str | None = None,
-    # mem_bound: str | None = None,
-    frequency: int = 25,
+    mem_bound: str | None = None,
 ) -> Callable:
-    
+
     def decorator(func: Callable) -> Callable:
         full_name = function_full_name(func)
         tracked = track(length_function)(func)
-        time_model = models.get_model(time_bound) if time_bound else None
-        # mem_model = models.get_model(mem_bound) if mem_bound else None
+
+        tests = {}
+        if time_bound:
+            tests["time_bound"] = time_bound
+        if mem_bound:
+            tests["mem_bound"] = mem_bound
+
+        performance_data[full_name] = FunctionData(tests=tests, observations=[])
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            try:
-                # print("here")
-                result = tracked(*args, **kwargs)
-            # except Exception as e:
-            #     print(e)
-            finally:
-                pass
+            return tracked(*args, **kwargs)
 
-            if len(performance_data[full_name]) % frequency == 0:
+        return wrapper
 
-                lengths = [entry["length"] for entry in performance_data[full_name]]
+    return decorator
 
-                if time_model:
 
-                    times = [entry["time"] for entry in performance_data[full_name]]
+def abtest(
+    length_function: Callable[..., int],
+    alt: Callable,
+) -> Callable:
 
-                    spec_model_fit, slower_but_better_fits, all_fits = models.check_bound(
-                        lengths, times, time_model
-                    )
+    def decorator(func: Callable) -> Callable:
+        full_name = function_full_name(func)
+        alt_full_name = function_full_name(alt)
+        tracked = track(length_function)(func)
+        alt_tracked = track(length_function)(alt)
 
-                    if slower_but_better_fits:
+        tests = {
+            "abtest": alt_full_name,
+        }
 
-                        to_graph = slower_but_better_fits
+        performance_data[full_name] = FunctionData(tests=tests, observations=[])
 
-                        as_str = "\n".join(
-                            [
-                                f"{str(model)} (pvalue={pvalue:.3f})"
-                                for model, pvalue in slower_but_better_fits
-                            ]
-                        )
-
-                        raise ValueError(
-                            textwrap.dedent(
-                                """\
-                                {full_name} is not {time_bound} as expected.  
-                                The following are better fits:
-                                ```
-                                {as_str}
-                                ```
-                                """
-                                # See {system_name}.pdf for a plot of the data and fits."""
-                            ).format(
-                                full_name=full_name,
-                                time_bound=time_bound,
-                                as_str=as_str,
-                                system_name=system_name,
-                            )
-                        )
-                    
-                    else:
-                        to_graph = all_fits
-                    
-                    plot_complexities(
-                            lengths,
-                            times,
-                            spec_model_fit,
-                            [fitted for fitted, _ in to_graph],
-                            func
-                        )
-
-                else:
-                    print("Invalid time bound")
-
-                # if mem_model:
-                #     memories = [
-                #         entry["memory"] for entry in performance_data[full_name]
-                #     ]
-                #     models.check_bound(lengths, memories, mem_model)
-
-            return result
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if random.random() < 0.5:
+                return alt_tracked(*args, **kwargs)
+            else:
+                return tracked(*args, **kwargs)
 
         return wrapper
 
@@ -293,24 +210,27 @@ def save_performance_data() -> None:
             if full_name in hash_function_values:
                 validated = []
                 current_hash = hash_function_values[full_name]
-                for entry in old_data[full_name]:
+                for entry in old_data[full_name]["observations"]:
                     if entry["hash"] == current_hash:
                         validated.append(entry)
-                old_data[full_name] = validated
+                old_data[full_name]["observations"] = validated
 
     except FileNotFoundError:
         old_data = {}
         pass
 
     # Merge the old with the new dictionary
-    for key, value_list in old_data.items():
+    for key, function_data in old_data.items():
 
         if key in performance_data:
             # Key exists in both dicts; extend the list from performance_data with the new entries
-            performance_data[key].extend(value_list)
+            performance_data[key]["observations"].extend(function_data["observations"])
+            performance_data[key]["tests"].update(function_data["tests"])
         else:
             # Key only exists in old_data; add it to performance_data
-            performance_data[key] = value_list
+            performance_data[key] = FunctionData(
+                tests=function_data["tests"], observations=function_data["observations"]
+            )
 
     with open(performance_data_filename, "w") as f:
         json.dump(performance_data, f, indent=4)

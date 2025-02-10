@@ -9,7 +9,7 @@ import sys
 
 from collections import defaultdict
 from functools import wraps
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, Literal, TypedDict
 
 
 system_name = "bigO"
@@ -75,6 +75,19 @@ def function_full_name(func: Callable) -> str:
     file_name = module.__file__ if module and module.__file__ else "<unknown>"
     return str((func_name, file_name))
 
+  
+def is_tracked(func: Callable) -> bool:
+    """
+    Check if the given function or any function in its __wrapped__ chain
+    has been marked as tracked.
+    """
+    current = func
+    while current:
+        if getattr(current, '__is_tracked__', False):
+            return True
+        current = getattr(current, '__wrapped__', None)
+    return False
+
 
 def track(length_function: Callable[..., int]) -> Callable:
     """
@@ -89,6 +102,11 @@ def track(length_function: Callable[..., int]) -> Callable:
     """
 
     def decorator(func: Callable) -> Callable:
+        
+        # If the function is already tracked, return it as is.
+        if is_tracked(func):
+            return func
+
         # Store a hash of the code to enable discarding old perf data if the
         # function has changed
         hash_value = function_hash_value(func)
@@ -133,6 +151,7 @@ def track(length_function: Callable[..., int]) -> Callable:
                     performance_data[full_name]["observations"].append(perf_data)
             return result
 
+        wrapper.__is_tracked__ = True
         return wrapper
 
     return decorator
@@ -168,6 +187,7 @@ def check(
 def abtest(
     length_function: Callable[..., int],
     alt: Callable,
+    metric : Literal["time", "memory", "both"] = "time",
 ) -> Callable:
 
     def decorator(func: Callable) -> Callable:
@@ -176,8 +196,10 @@ def abtest(
         tracked = track(length_function)(func)
         alt_tracked = track(length_function)(alt)
 
+        metrics = [ metric ] if metric != "both" else ["time", "memory"]
+
         tests = {
-            "abtest": alt_full_name,
+            "abtest": (alt_full_name, metrics)
         }
 
         performance_data[full_name] = FunctionData(tests=tests, observations=[])
@@ -225,7 +247,7 @@ def save_performance_data() -> None:
         if key in performance_data:
             # Key exists in both dicts; extend the list from performance_data with the new entries
             performance_data[key]["observations"].extend(function_data["observations"])
-            performance_data[key]["tests"].update(function_data["tests"])
+            performance_data[key]["tests"] = function_data["tests"]
         else:
             # Key only exists in old_data; add it to performance_data
             performance_data[key] = FunctionData(

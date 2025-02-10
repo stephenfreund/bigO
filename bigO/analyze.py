@@ -5,11 +5,12 @@ import textwrap
 from typing import List, Optional
 
 from matplotlib import gridspec, pyplot as plt
-from matplotlib.figure import Figure, SubFigure
-from bigO import models
+from matplotlib.figure import SubFigure
+import pandas as pd
+import bigO.models as models
+from bigO.abtest import non_parametric_fit, segmented_permutation_test
 from bigO.output import log, log_timer, message
 import click
-from matplotlib.axes import Axes
 import numpy as np
 import seaborn as sns
 
@@ -28,9 +29,6 @@ class FunctionData:
 
 class Analysis(abc.ABC):
 
-    def __init__(self, function_data: FunctionData):
-        self.function_data = function_data
-
     @abc.abstractmethod
     def run(self):
         pass
@@ -47,7 +45,7 @@ class Analysis(abc.ABC):
 class InferPerformance(Analysis):
 
     def __init__(self, function_data: FunctionData):
-        super().__init__(function_data)
+        self.function_data = function_data
 
     def run(self):
         with log_timer(
@@ -64,6 +62,7 @@ class InferPerformance(Analysis):
         best_time_model = self.fitted_times[0]
         best_mem_model = self.fitted_mems[0]
         return (
+            f"Inferred Bounds for {self.function_data.function_name}\n"
             f"Best time model: {best_time_model}\nBest memory model: {best_mem_model}"
         )
 
@@ -121,7 +120,8 @@ class CheckBounds(Analysis):
         time_bound: str | None = None,
         mem_bound: str | None = None,
     ):
-        super().__init__(function_data)
+        super().__init__()
+        self.function_data = function_data
         self.time_bound = models.get_model(time_bound) if time_bound else None
         self.mem_bound = models.get_model(mem_bound) if mem_bound else None
 
@@ -149,7 +149,7 @@ class CheckBounds(Analysis):
                     self.mem_check = None
 
     def message(self) -> str:
-        message = []
+        message = [ f"Bounds for {self.function_data.function_name}" ]
         if self.time_check:
             message += [
                 f"Declared Time Bound: {self.time_bound}",
@@ -186,7 +186,7 @@ class CheckBounds(Analysis):
             color=color,
             label=f"{declared_fit}: {declared_fit}",
         )
-        for i, (_, row) in enumerate(check_result.better_models.iterrows()):
+        for i, (_, row) in enumerate(check_result.better_models.take(np.arange(0,4)).iterrows()):
             (model, pvalue) = row["model"], row["pvalue"]
             sns.lineplot(
                 x=model.n,
@@ -226,7 +226,139 @@ class CheckBounds(Analysis):
 
 
 class ABTest(Analysis):
-    pass
+    def __init__(
+        self,
+        a: FunctionData,
+        b: FunctionData,
+        metric: str
+    ):
+        self.a = a
+        self.b = b
+        self.metric = metric
+        print(f"AB Test: A is {a.function_name}; B is {b.function_name}")
+
+    def run(self):
+        with log_timer(
+            "Infer time and memory models for {self.function_data.function_name}"
+        ):
+            combined_labels = np.concatenate([["A"] * len(self.a.lengths), ["B"] * len(self.b.lengths)])
+            combined_lengths = np.concatenate([self.a.lengths, self.b.lengths])
+            combined_T = np.concatenate([self.a.times if self.metric == 'time' else self.a.mems, 
+                                         self.b.times if self.metric == 'time' else self.b.mems])
+            self.combined_df = pd.DataFrame({
+                "label": combined_labels,
+                "n": combined_lengths,
+                "T": combined_T,
+            })
+            self.ab_results = segmented_permutation_test(
+                self.combined_df,
+                num_permutations=1000,
+                num_points=100,
+            )
+
+    def message(self) -> str:
+        message = [ f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}" ]
+        for report in self.ab_results:
+            message += [ str(report) ]
+        return "\n".join(message)
+
+
+    def plot(self, fig: SubFigure):
+        num_figs = min(1 + len(self.ab_results), 4)
+        axes = fig.subplots(1, num_figs)
+
+        # ----------------------------------------
+        # 4.1. Scatter Plots with LOESS Curves (First Visualization)
+        # ----------------------------------------
+
+        df_A = self.combined_df[self.combined_df.label == "A"]
+        df_B = self.combined_df[self.combined_df.label == "B"]
+
+        n_A, T_A = non_parametric_fit(df_A)
+        n_B, T_B = non_parametric_fit(df_B)
+
+        sns.scatterplot(
+            data=df_A,
+            x="n",
+            y="T",
+            label=f"A: {self.a.function_name}",
+            alpha=0.7,
+            ax=axes[0],
+        )
+
+        sns.scatterplot(
+            data=df_B,
+            x="n",
+            y="T",
+            label=f"B: {self.b.function_name}",
+            alpha=0.7,
+            ax=axes[0],
+        )
+
+        sns.lineplot(
+            x=n_A,
+            y=T_A,
+            color="C0",
+            ax=axes[0],
+        )
+
+        sns.lineplot(
+            x=n_B,
+            y=T_B,
+            color="C1",
+            ax=axes[0],
+        )
+
+        for index, result in enumerate(self.ab_results):
+            if index > 0:
+                axes[0].axvline(
+                    result.n_common.min(),
+                    color="black",
+                    linestyle="--",
+                    linewidth=1,
+                )
+
+        axes[0].set_xlabel("Input Size (n)")
+        axes[0].set_ylabel(f"{self.metric.title()} (T)")
+        axes[0].set_title(f"{self.a.function_name} vs. {self.b.function_name}: {self.metric.title()}")
+        axes[0].legend()
+        axes[0].grid(True)
+
+        # ----------------------------------------
+        # 4.2. Difference in Running Times and Permutation Test by Segment
+        # ----------------------------------------
+
+        for segment_number, result in enumerate(self.ab_results[-3:]):
+            index = segment_number
+
+            valid_perm_stats = result.perm_stats[np.isfinite(result.perm_stats)]
+
+            # Histogram of the permutation test distribution
+            sns.histplot(
+                valid_perm_stats,
+                stat="percent",
+                bins=50,
+                color="C7",
+                alpha=0.8,
+                label="Permutation Distribution",
+                ax=axes[index + 1],
+            )
+
+            axes[index + 1].axvline(
+                result.observed_stat,
+                color="red",
+                linestyle="--",
+                linewidth=2,
+                label="Observed Statistic",
+            )
+
+            axes[index + 1].set_xlabel("Signed Area Between LOESS Curves")
+            axes[index + 1].set_ylabel("Frequency")
+            axes[index + 1].set_title(
+                f"{result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is better (p-value={result.p_value:.3f})"
+            )
+            axes[index + 1].legend()
+            axes[index + 1].grid(True)
 
 
 @click.command()
@@ -267,11 +399,26 @@ def main(output_file: Optional[str]):
 
             entries[key] = function_data
 
+        used_in_tests = set()
+        for key, function_record in data.items():
+            function_data = entries[key]
             time_bound = function_record["tests"].get("time_bound", None)
             mem_bound = function_record["tests"].get("mem_bound", None)
+            ab_test = function_record["tests"].get("abtest", None) 
             if time_bound or mem_bound:
                 work_items += [CheckBounds(function_data, time_bound, mem_bound)]
-            else:
+                used_in_tests.add(key)
+            elif ab_test:
+                alt, metrics = ab_test
+                if "time" in metrics:
+                    work_items += [ABTest(function_data, entries[alt], "time")]
+                if "memory" in metrics:
+                    work_items += [ABTest(function_data, entries[alt], "memory")]
+                used_in_tests.add(key)
+                used_in_tests.add(alt)
+            
+        for key, function_record in data.items():
+            if key not in used_in_tests:
                 work_items += [InferPerformance(function_data)]
 
     sns.set_style("whitegrid")
@@ -283,7 +430,6 @@ def main(output_file: Optional[str]):
     for index, item in enumerate(work_items):
         subfig = fig.add_subfigure(gs_main[index, 0])
         item.run()
-        message(item.function_data.function_name)
         message(textwrap.indent(item.message(), "  "))
         message("")
         item.plot(subfig)

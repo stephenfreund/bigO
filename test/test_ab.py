@@ -26,6 +26,28 @@ def quick_sort(arr):
     return quick_sort(left) + middle + quick_sort(right)
 
 
-for i in range(20):
+@abtest(lambda x: len(x), alt=quick_sort)
+def quick_sort2(arr):
+    """
+    A version of qsort done with loops
+    """ 
+    if len(arr) <= 1:
+        return arr
+    pivot = arr[len(arr) // 2]
+    left = []
+    middle = []
+    right = []
+    for x in arr:
+        if x < pivot:
+            left.append(x)
+        elif x == pivot:
+            middle.append(x)
+        else:
+            right.append(x)
+    return quick_sort(left) + middle + quick_sort(right)
+
+
+for i in range(10):
     print("sort me!")
-    quick_sort(list(np.random.rand(random.randint(100, 2_000))))
+    quick_sort(list(np.random.rand(random.randint(100, 1000))))
+    quick_sort2(list(np.random.rand(random.randint(100, 50000))))

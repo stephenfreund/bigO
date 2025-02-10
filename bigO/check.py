@@ -12,13 +12,12 @@ from bigO.models import (
     fit_model,
     fit_models,
     get_model,
-    leq,
     remove_outliers,
 )
 
 
 def error_plot(func_name, bound_type, n, y, bound_model_fit, best_fit, pvalue):
-    fig, ax = plt.subplots(figsize=(6, 4))
+    _, ax = plt.subplots(figsize=(6, 4))
 
     ax.plot(n, y, "o", color="blue", label="Data (outliers removed)")
     fit_n = np.sort(n)
@@ -76,7 +75,7 @@ def check(
             bound_model_fit, _ = fit_model(lengths, y, bound_model)
             if fits:
                 best_fit, _ = fits[0]
-                if not leq(best_fit, bound_model_fit):
+                if not (best_fit <= bound_model_fit):
                     pvalue = better_fit_pvalue_vectorized(
                         lengths, y, bound_model_fit, best_fit
                     )

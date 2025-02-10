@@ -30,6 +30,8 @@ dependencies = [
 "numpy",
 "scipy",
 "matplotlib",
+"statsmodels",
+"scikit-learn",
 "seaborn",
 "termcolor",
 "click"
@@ -38,6 +40,9 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/plasma-umass/bigO"
 "Repository" = "https://github.com/plasma-umass/bigO"
+
+[project.scripts]
+bigo-report = "bigO.analyze:main"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

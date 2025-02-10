@@ -1,25 +1,52 @@
 from dataclasses import dataclass
 import json
-from math import e
 import sys
-from typing import Callable, List, Tuple
+from typing import Callable, List
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import scipy
 import seaborn as sns
 from scipy.optimize import curve_fit
 
-from bigO.output import log_timer
 
 system_name = "bigO"
 
 
+@dataclass
+class CanonicalForm:
+    """
+    Represent any function f(n) = r^n * n^s * (log n)^t * (log log n)^u
+    as the coefficients.  All coefficients are floats and >= 0.  Use 
+    None to indicate that the coefficient is the *last* parameter of 
+    the fitted model for this funcion.
+    """
+    
+    r: float
+    s: float
+    t: float
+    u: float
+
+    def __str__(self) -> str:
+        if self.r == 0:
+            return "0"
+        parts = []
+        if self.r != 1:
+            parts.append(f"{self.r:.2f}**n")
+        if self.s != 0:
+            parts.append(f"n**{self.s:.2f}")
+        if self.t != 0:
+            parts.append(f"log(n)**{self.t:.2f}")
+        if self.u != 0:
+            parts.append(f"log(log(n))**{self.u:.2f}")
+        return " * ".join(parts)
+    
+
 class Model:
-    def __init__(self, name: str, func: Callable):
+    def __init__(self, name: str, func: Callable, canonical_form: CanonicalForm):
         self.name = name
         self.func = func
         self.param_count = func.__code__.co_argcount - 1  # Subtract 1 for 'n'
+        self.canonical_form = canonical_form
 
     def __call__(self, n, *args):
         return self.func(n, *args)
@@ -83,6 +110,50 @@ class FittedModel:
 
     def actual(self):
         return f"{self.params[0]} * {str(self)} + {self.params[1]}"
+    
+    def __le__(self, other):
+
+        def val_or_last_param(x):
+            return x if x is not None else self.params[-1]
+
+        cf = self.model.canonical_form
+        cfo = other.model.canonical_form
+        
+        # exponential growth
+
+        r = val_or_last_param(cf.r)
+        ro = val_or_last_param(cfo.r)
+        if r < ro:
+            return True
+        elif r > ro:
+            return False
+                
+        # polynomial growth
+        s = val_or_last_param(cf.s)
+        so = val_or_last_param(cfo.s)
+        if s < so:
+            return True
+        elif s > so:
+            return False
+        
+        # log growth
+        t = val_or_last_param(cf.t)
+        to = val_or_last_param(cfo.t)
+        if t < to:
+            return True
+        elif t > to:
+            return False
+        
+        # log log growth
+        u = val_or_last_param(cf.u)
+        uo = val_or_last_param(cfo.u)
+        if u < uo:
+            return True
+        elif u > uo:
+            return False
+        
+        return True
+
 
 
 def safe_log(x):
@@ -93,20 +164,18 @@ def safe_log(x):
 
 
 # Model definitions
-model_constant = Model("1", lambda n, a: np.ones(np.shape(n)) * a)
-model_log_log_n = Model("log(log(n))", lambda n, a, b: a * safe_log(safe_log(n)) + b)
-model_log_n = Model("log(n)", lambda n, a, b: a * safe_log(n) + b)
-model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b)
-model_linear_n = Model("n", lambda n, a, b: a * n + b)
-model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * safe_log(n) + b)
-model_n_squared = Model("n**2", lambda n, a, b: a * n**2 + b)
-model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b)
-model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b)
-model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (safe_log(n) ** 2) + b)
-model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (safe_log(n) ** 3) + b)
-# model_n_log_n_power_k = Model(
-#     "n*(log(n))**k", lambda n, a, b, k: a * n * (np.log(n) ** k) + b
-# )
+model_constant = Model("1", lambda n, a: np.ones(np.shape(n)) * a, CanonicalForm(1, 0, 0, 0))
+model_log_log_n = Model("log(log(n))", lambda n, a, b: a * safe_log(safe_log(n)) + b, CanonicalForm(1, 0, 0, 1))
+model_log_n = Model("log(n)", lambda n, a, b: a * safe_log(n) + b, CanonicalForm(1, 0, 1, 0))
+model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b, CanonicalForm(1, 0.5, 0, 0))
+model_linear_n = Model("n", lambda n, a, b: a * n + b, CanonicalForm(1, 1, 0, 0))
+model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * safe_log(n) + b, CanonicalForm(1, 1, 1, 0))
+model_n_squared = Model("n**2", lambda n, a, b: a * n**2 + b, CanonicalForm(1, 2, 0, 0))
+model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b, CanonicalForm(1, 3, 0, 0))
+model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b, CanonicalForm(1, None, 0, 0))
+model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (safe_log(n) ** 2) + b, CanonicalForm(1, 0, 2, 0))
+model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (safe_log(n) ** 3) + b, CanonicalForm(1, 0, 3, 0))
+model_n_exp = Model("2**n", lambda n, a, b: a * (2**n) + b, CanonicalForm(2, 0, 0, 0))
 
 # List of models
 models = [
@@ -121,6 +190,7 @@ models = [
     model_n_squared,
     model_n_cubed,
     model_n_power_k,
+    model_n_exp,
 ]
 
 
@@ -142,35 +212,6 @@ def get_model(name: str) -> Model:
         return Model(name, lambda n, a, b: a * n**k + b)
 
     raise ValueError(f"Unknown model: {name}")
-
-
-# TODO: Check the ranks for n^k.
-def rank(fitted_model):
-    if fitted_model.model != model_n_power_k:
-        return models.index(fitted_model.model)
-    else:
-        # Handle the special case for model_n_power_k
-        k = fitted_model.params[-1]
-        if k == 0:  # Constant growth
-            return 0  # Comparate to constant
-        elif 0 < k < 1:  # Sub-linear growth
-            return models.index(model_sqrt_n)  # Comparable to sqrt(n)
-        elif k == 1:  # Linear growth
-            return models.index(model_linear_n)
-        elif 1 < k < 2:  # Super-linear but sub-quadratic
-            return models.index(model_n_log_n)
-        elif k == 2:  # Quadratic growth
-            return models.index(model_n_squared)
-        elif 2 < k < 3:  # Super-quadratic but sub-cubic
-            return models.index(model_n_cubed) - 1  # Between quadratic and cubic
-        elif k == 3:  # Cubic growth
-            return models.index(model_n_cubed)
-        else:  # k > 3, ranks higher than cubic
-            return len(models)  # Ranks at the end
-
-
-def leq(fitted_model_1, fitted_model_2):
-    return rank(fitted_model_1) <= rank(fitted_model_2)
 
 
 def fit_model(n, y, model) -> FittedModel:
@@ -209,8 +250,10 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     )
 
     fitted_models = fitted_models.sort_values(by="aic", ascending=True)
-    fitted_models["rank"] = fitted_models["model"].apply(rank)
-    fitted_models = fitted_models[fitted_models["rank"] > rank(bound_model_fit)]
+    # fitted_models["rank"] = fitted_models["model"].apply(rank)
+    print(fitted_models["model"] <= bound_model_fit)
+    fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
+    print(fitted_models)
     better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 
     return CheckBoundResult(
@@ -270,131 +313,95 @@ def remove_outliers(n, y):
     return n[mask], y[mask]
 
 
-def plot_complexities_from_file(filename=f"{system_name}_data.json"):
-    with open(filename, "r") as f:
-        data = json.load(f)
-
-    entries = []
-    for key, records in data.items():
-        key_str = key.strip("()")
-        parts = key_str.split(",")
-        function_name = parts[0].strip().strip("'\"")
-        file_name = parts[1].strip().strip("'\"")
-
-        lengths = [r["length"] for r in records]
-        times = [r["time"] for r in records]
-        mems = [r["memory"] for r in records]
-
-        entries.append((function_name, file_name, lengths, times, mems))
-
-    n_entries = len(entries)
-
-    sns.set_style("whitegrid")
-    # Use squeeze=False to always get a 2D array of axes
-
-    plot_memory = True
-
-    if plot_memory:
-        fig, axes = plt.subplots(
-            nrows=n_entries, ncols=2, figsize=(12, 4 * n_entries), squeeze=False
-        )
-    else:
-        fig, axes = plt.subplots(
-            nrows=n_entries, ncols=1, figsize=(6, 4 * n_entries), squeeze=False
-        )
-
-    for i, (func, filepath, lengths, times, mems) in enumerate(entries):
-        # Remove outliers
-        n_time, y_time = remove_outliers(lengths, times)
-        time_fits = fit_models(n_time, y_time)
-        time_fits.sort(key=lambda x: x.aic(n_time, y_time))
-
-        n_mem, y_mem = remove_outliers(lengths, mems)
-        mem_fits = fit_models(n_mem, y_mem)
-
-        # Time plot (axes[i,0])
-        ax_time = axes[i, 0]
-        ax_time.plot(n_time, y_time, "o", color="blue", label="Data (outliers removed)")
-        if len(time_fits) > 0:
-            best_fit = time_fits[0]
-            fit_n = np.sort(n_time)
-            fit_y = best_fit.predict(fit_n)
-
-            ax_time.plot(
-                fit_n,
-                best_fit.predict(fit_n),
-                "-",
-                color="blue",
-                linewidth=1,
-                label=f"Fit: {best_fit}",
-            )
-
-            for j in np.arange(1, 3):
-                ax_time.plot(
-                    fit_n,
-                    time_fits[j].predict(fit_n),
-                    "--",
-                    color="blue",
-                    linewidth=0.5,
-                    label=f"{j+1}nd Fit: {time_fits[j]}",
-                )
-
-            time_pvalue = 0
-            best_aic = best_fit.aic(n_time, y_time)
-            title = f"{func} (Time): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse():.3f} pvalue={time_pvalue:.3f}"
-        else:
-            title = f"{func} (Time): No fit"
-
-        ax_time.set_xlabel("Input Size (n)")
-        ax_time.set_ylabel("Time")
-        ax_time.set_title(title, fontsize=12)
-        ax_time.legend()
-
-        if False and plot_memory:
-            # Memory plot (axes[i,1])
-            ax_mem = axes[i, 1]
-            ax_mem.plot(n_mem, y_mem, "o", color="red", label="Data (outliers removed)")
-            if len(mem_fits) > 0:
-                best_fit, best_aic = mem_fits[0]
-                fit_n = np.sort(n_mem)
-                fit_y = best_fit.predict(fit_n)
-
-                ax_mem.plot(
-                    fit_n,
-                    fit_y,
-                    "-",
-                    color="red",
-                    linewidth=1,
-                    label=f"Fit: {best_fit}",
-                )
-
-                for j in np.arange(1, 3):
-                    ax_mem.plot(
-                        fit_n,
-                        mem_fits[j][0].predict(fit_n),
-                        "--",
-                        color="red",
-                        linewidth=0.5,
-                        label=f"{j+1}nd Fit: {mem_fits[j][0]}",
-                    )
-
-                title = f"{func} (Mem): {best_fit}\naic={best_aic:.3f} mse={best_fit.mse(n_mem,y_mem):.3f} pvalue={mem_pvalue:.3f}"
-            else:
-                title = f"{func} (Memory): No fit"
-            ax_mem.set_xlabel("Input Size (n)")
-            ax_mem.set_ylabel("Memory")
-            ax_mem.set_title(title, fontsize=12)
-            ax_mem.legend()
-
-    plt.tight_layout()
-    filename = f"{system_name}.pdf"
-    plt.savefig(filename)
-    print(f"{filename} written.")
-    # plt.show()
-
 
 if __name__ == "__main__":
-    fname = f"{system_name}_data.json"
-    if len(sys.argv) > 1:
-        fname = sys.argv[1]
-    plot_complexities_from_file(fname)
+
+    import unittest
+
+
+
+    class TestFittedModelLE(unittest.TestCase):
+
+        def setUp(self):
+            # Dummy data for n and y.
+            self.n_data = np.array([2, 3, 4])
+            self.y_data = np.array([1, 2, 3])
+
+        def create_fitted_model(self, model, params):
+            return FittedModel(model, np.array(params), self.n_data, self.y_data)
+
+        def test_constant_vs_log_log(self):
+            # constant: (1, 0, 0, 0) vs log(log(n)): (1, 0, 0, 1)
+            fm_const = self.create_fitted_model(model_constant, [5.0])
+            fm_log_log = self.create_fitted_model(model_log_log_n, [5.0, 0.0])
+            self.assertTrue(fm_const <= fm_log_log)
+            self.assertFalse(fm_log_log <= fm_const)
+
+        def test_log_vs_n_log(self):
+            # log(n): (1, 0, 1, 0) vs n*log(n): (1, 1, 1, 0)
+            fm_log = self.create_fitted_model(model_log_n, [5.0, 0.0])
+            fm_n_log = self.create_fitted_model(model_n_log_n, [5.0, 0.0])
+            self.assertTrue(fm_log <= fm_n_log)
+            self.assertFalse(fm_n_log <= fm_log)
+
+        def test_sqrt_vs_linear(self):
+            # sqrt(n): (1, 0.5, 0, 0) vs n: (1, 1, 0, 0)
+            fm_sqrt = self.create_fitted_model(model_sqrt_n, [5.0, 0.0])
+            fm_linear = self.create_fitted_model(model_linear_n, [5.0, 0.0])
+            self.assertTrue(fm_sqrt <= fm_linear)
+            self.assertFalse(fm_linear <= fm_sqrt)
+
+        def test_n_squared_vs_n_cubed(self):
+            # n**2: (1, 2, 0, 0) vs n**3: (1, 3, 0, 0)
+            fm_n_squared = self.create_fitted_model(model_n_squared, [5.0, 0.0])
+            fm_n_cubed = self.create_fitted_model(model_n_cubed, [5.0, 0.0])
+            self.assertTrue(fm_n_squared <= fm_n_cubed)
+            self.assertFalse(fm_n_cubed <= fm_n_squared)
+
+        def test_n_power_k_vs_n_squared_with_k_less(self):
+            # n**k: (1, None, 0, 0) where None is substituted with k.
+            # Use k = 1.5 which is less than 2 (from n**2)
+            fm_n_power_k = self.create_fitted_model(model_n_power_k, [5.0, 0.0, 1.5])
+            fm_n_squared = self.create_fitted_model(model_n_squared, [5.0, 0.0])
+            # For fm_n_power_k, s becomes 1.5 vs 2.
+            self.assertTrue(fm_n_power_k <= fm_n_squared)
+            # In reverse, fm_n_squared <= fm_n_power_k compares 2 (its s) with
+            # the substituted value from fm_n_power_k using fm_n_squared’s params[-1] (0.0), so False.
+            self.assertFalse(fm_n_squared <= fm_n_power_k)
+
+        def test_n_power_k_vs_n_squared_with_k_more(self):
+            # Use k = 2.5 which is greater than 2.
+            fm_n_power_k = self.create_fitted_model(model_n_power_k, [5.0, 0.0, 2.5])
+            fm_n_squared = self.create_fitted_model(model_n_squared, [5.0, 0.0])
+            self.assertFalse(fm_n_power_k <= fm_n_squared)
+
+        def test_n_exp_vs_linear_less(self):
+            # n_exp: (None, 1, 0, 0) where r is substituted with last param.
+            # Use k = 0.8 (< 1 from linear)
+            fm_n_exp = self.create_fitted_model(model_n_exp, [5.0, 0.0, 0.8])
+            fm_linear = self.create_fitted_model(model_linear_n, [5.0, 0.0])
+            # For fm_n_exp, r becomes 0.8 which is less than 1.
+            self.assertTrue(fm_n_exp <= fm_linear)
+            self.assertFalse(fm_linear <= fm_n_exp)
+
+        def test_n_exp_vs_linear_more(self):
+            # Use k = 1.2 (> 1)
+            fm_n_exp = self.create_fitted_model(model_n_exp, [5.0, 0.0, 1.2])
+            fm_linear = self.create_fitted_model(model_linear_n, [5.0, 0.0])
+            self.assertFalse(fm_n_exp <= fm_linear)
+
+        def test_log_n_squared_vs_log_n_cubed(self):
+            # (log(n))**2: (1,0,2,0) vs (log(n))**3: (1,0,3,0)
+            fm_log_n_squared = self.create_fitted_model(model_log_n_squared, [5.0, 0.0])
+            fm_log_n_cubed = self.create_fitted_model(model_log_n_cubed, [5.0, 0.0])
+            self.assertTrue(fm_log_n_squared <= fm_log_n_cubed)
+            self.assertFalse(fm_log_n_cubed <= fm_log_n_squared)
+
+        def test_n_log_n_vs_n_squared(self):
+            # n*log(n): (1,1,1,0) vs n**2: (1,2,0,0)
+            fm_n_log_n = self.create_fitted_model(model_n_log_n, [5.0, 0.0])
+            fm_n_squared = self.create_fitted_model(model_n_squared, [5.0, 0.0])
+            self.assertTrue(fm_n_log_n <= fm_n_squared)
+            self.assertFalse(fm_n_squared <= fm_n_log_n)
+
+    unittest.main()

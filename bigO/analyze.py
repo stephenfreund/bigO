@@ -8,7 +8,8 @@ from matplotlib import gridspec, pyplot as plt
 from matplotlib.figure import SubFigure
 import pandas as pd
 import bigO.models as models
-from bigO.abtest import non_parametric_fit, segmented_permutation_test
+
+# from bigO.abtest import non_parametric_fit, segmented_permutation_test
 from bigO.output import log, log_timer, message
 import click
 import numpy as np
@@ -149,7 +150,7 @@ class CheckBounds(Analysis):
                     self.mem_check = None
 
     def message(self) -> str:
-        message = [ f"Bounds for {self.function_data.function_name}" ]
+        message = [f"Bounds for {self.function_data.function_name}"]
         if self.time_check:
             message += [
                 f"Declared Time Bound: {self.time_bound}",
@@ -186,7 +187,9 @@ class CheckBounds(Analysis):
             color=color,
             label=f"{declared_fit}: {declared_fit}",
         )
-        for i, (_, row) in enumerate(check_result.better_models.take(np.arange(0,4)).iterrows()):
+        for i, (_, row) in enumerate(
+            check_result.better_models.take(np.arange(0, 4)).iterrows()
+        ):
             (model, pvalue) = row["model"], row["pvalue"]
             sns.lineplot(
                 x=model.n,
@@ -226,12 +229,7 @@ class CheckBounds(Analysis):
 
 
 class ABTest(Analysis):
-    def __init__(
-        self,
-        a: FunctionData,
-        b: FunctionData,
-        metric: str
-    ):
+    def __init__(self, a: FunctionData, b: FunctionData, metric: str):
         self.a = a
         self.b = b
         self.metric = metric
@@ -241,15 +239,23 @@ class ABTest(Analysis):
         with log_timer(
             "Infer time and memory models for {self.function_data.function_name}"
         ):
-            combined_labels = np.concatenate([["A"] * len(self.a.lengths), ["B"] * len(self.b.lengths)])
+            combined_labels = np.concatenate(
+                [["A"] * len(self.a.lengths), ["B"] * len(self.b.lengths)]
+            )
             combined_lengths = np.concatenate([self.a.lengths, self.b.lengths])
-            combined_T = np.concatenate([self.a.times if self.metric == 'time' else self.a.mems, 
-                                         self.b.times if self.metric == 'time' else self.b.mems])
-            self.combined_df = pd.DataFrame({
-                "label": combined_labels,
-                "n": combined_lengths,
-                "T": combined_T,
-            })
+            combined_T = np.concatenate(
+                [
+                    self.a.times if self.metric == "time" else self.a.mems,
+                    self.b.times if self.metric == "time" else self.b.mems,
+                ]
+            )
+            self.combined_df = pd.DataFrame(
+                {
+                    "label": combined_labels,
+                    "n": combined_lengths,
+                    "T": combined_T,
+                }
+            )
             self.ab_results = segmented_permutation_test(
                 self.combined_df,
                 num_permutations=1000,
@@ -257,11 +263,12 @@ class ABTest(Analysis):
             )
 
     def message(self) -> str:
-        message = [ f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}" ]
+        message = [
+            f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}"
+        ]
         for report in self.ab_results:
-            message += [ str(report) ]
+            message += [str(report)]
         return "\n".join(message)
-
 
     def plot(self, fig: SubFigure):
         num_figs = min(1 + len(self.ab_results), 4)
@@ -320,7 +327,9 @@ class ABTest(Analysis):
 
         axes[0].set_xlabel("Input Size (n)")
         axes[0].set_ylabel(f"{self.metric.title()} (T)")
-        axes[0].set_title(f"{self.a.function_name} vs. {self.b.function_name}: {self.metric.title()}")
+        axes[0].set_title(
+            f"{self.a.function_name} vs. {self.b.function_name}: {self.metric.title()}"
+        )
         axes[0].legend()
         axes[0].grid(True)
 
@@ -404,7 +413,7 @@ def main(output_file: Optional[str]):
             function_data = entries[key]
             time_bound = function_record["tests"].get("time_bound", None)
             mem_bound = function_record["tests"].get("mem_bound", None)
-            ab_test = function_record["tests"].get("abtest", None) 
+            ab_test = function_record["tests"].get("abtest", None)
             if time_bound or mem_bound:
                 work_items += [CheckBounds(function_data, time_bound, mem_bound)]
                 used_in_tests.add(key)
@@ -416,7 +425,7 @@ def main(output_file: Optional[str]):
                     work_items += [ABTest(function_data, entries[alt], "memory")]
                 used_in_tests.add(key)
                 used_in_tests.add(alt)
-            
+
         for key, function_record in data.items():
             if key not in used_in_tests:
                 work_items += [InferPerformance(function_data)]

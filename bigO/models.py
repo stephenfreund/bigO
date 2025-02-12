@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import json
 import sys
-from typing import Callable, List
+from typing import Callable, List, Literal
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -12,40 +12,81 @@ from scipy.optimize import curve_fit
 system_name = "bigO"
 
 
+def format_float(value):
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 @dataclass
-class CanonicalForm:
+class FunctionCanonicalForm:
     """
     Represent any function f(n) = r^n * n^s * (log n)^t * (log log n)^u
-    as the coefficients.  All coefficients are floats and >= 0.  Use 
-    None to indicate that the coefficient is the *last* parameter of 
-    the fitted model for this funcion.
+    as the coefficients.  All coefficients are floats and >= 0.  Use
+    "k" for s to indicate a variable power.
     """
-    
+
     r: float
-    s: float
+    s: float | Literal["k"]
     t: float
     u: float
 
     def __str__(self) -> str:
-        if self.r == 0:
-            return "0"
+
+        def parameter(x):
+            return f"{format_float(x)}" if x != "k" else "k"
+
         parts = []
-        if self.r != 1:
-            parts.append(f"{self.r:.2f}**n")
+        if self.r != 1 and self.r != 0:
+            parts.append(f"{parameter(self.r)}**n")
         if self.s != 0:
-            parts.append(f"n**{self.s:.2f}")
+            if self.s == 0.5:
+                parts.append("sqrt(n)")
+            elif self.s == 1:
+                parts.append("n")
+            else:
+                parts.append(f"n**{parameter(self.s)}")
         if self.t != 0:
-            parts.append(f"log(n)**{self.t:.2f}")
+            if self.t == 1:
+                parts.append("log(n)")
+            else:
+                parts.append(f"log(n)**{parameter(self.t)}")
         if self.u != 0:
-            parts.append(f"log(log(n))**{self.u:.2f}")
-        return " * ".join(parts)
-    
+            if self.u == 1:
+                parts.append("log(log(n))")
+            else:
+                parts.append(f"log(log(n))**{parameter(self.u)}")
+        if parts == []:
+            return "1"
+        return "*".join(parts)
+
+    def as_lambda(self) -> str:
+        if self.r == 0 and self.s == 0 and self.t == 0 and self.u == 0:
+            return "lambda n, a: np.ones(np.shape(n)) * a"
+        elif self.s == "k":
+            return f"lambda n, a, b, k: a * ({self}) + b"
+        else:
+            return f"lambda n, a, b: a * ({self}) + b"
+
+    def as_bigo(self) -> str:
+        return f"O({self})"
+
+
+def log(x):
+    x = np.asarray(x)
+    result = np.full_like(x, -np.inf, dtype=np.float64)  # Initialize with -inf
+    np.log(x, where=(x > 0), out=result)
+    return result
+
+
+def sqrt(x):
+    return np.sqrt(x)
+
 
 class Model:
-    def __init__(self, name: str, func: Callable, canonical_form: CanonicalForm):
-        self.name = name
-        self.func = func
-        self.param_count = func.__code__.co_argcount - 1  # Subtract 1 for 'n'
+    def __init__(self, canonical_form: FunctionCanonicalForm):
+
+        self.name = canonical_form.as_bigo()
+        self.func = eval(canonical_form.as_lambda())
+        self.param_count = self.func.__code__.co_argcount - 1  # Subtract 1 for 'n'
         self.canonical_form = canonical_form
 
     def __call__(self, n, *args):
@@ -95,7 +136,6 @@ class FittedModel:
             return np.inf
 
         aic = 2 * k + n_points * np.log(rss / n_points)
-        # print(k, rss, n_points, aic)
         return aic
 
     def replace_k(self, name):
@@ -103,79 +143,48 @@ class FittedModel:
 
     def __str__(self):
         name = self.model.name
-        return f"O({self.replace_k(name)})"
+        return f"{self.replace_k(name)}"
 
     def __repr__(self):
         return str(self)
 
     def actual(self):
         return f"{self.params[0]} * {str(self)} + {self.params[1]}"
-    
+
     def __le__(self, other):
 
         def val_or_last_param(x):
-            return x if x is not None else self.params[-1]
+            return x if x != "k" else self.params[-1]
 
         cf = self.model.canonical_form
         cfo = other.model.canonical_form
-        
-        # exponential growth
 
-        r = val_or_last_param(cf.r)
-        ro = val_or_last_param(cfo.r)
-        if r < ro:
-            return True
-        elif r > ro:
-            return False
-                
-        # polynomial growth
-        s = val_or_last_param(cf.s)
-        so = val_or_last_param(cfo.s)
-        if s < so:
-            return True
-        elif s > so:
-            return False
-        
-        # log growth
-        t = val_or_last_param(cf.t)
-        to = val_or_last_param(cfo.t)
-        if t < to:
-            return True
-        elif t > to:
-            return False
-        
-        # log log growth
-        u = val_or_last_param(cf.u)
-        uo = val_or_last_param(cfo.u)
-        if u < uo:
-            return True
-        elif u > uo:
-            return False
-        
-        return True
+        c_params = [val_or_last_param(x) for x in (cf.r, cf.s, cf.t, cf.u)]
+        co_params = [val_or_last_param(x) for x in (cfo.r, cfo.s, cfo.t, cfo.u)]
 
+        for c, co in zip(c_params, co_params):
+            if c < co:
+                return True
+            elif c > co:
+                return False
 
-
-def safe_log(x):
-    x = np.asarray(x)
-    result = np.full_like(x, -np.inf, dtype=np.float64)  # Initialize with -inf
-    np.log(x, where=(x > 0), out=result)
-    return result
+        # coverages to a constant other than 0.
+        return False
 
 
 # Model definitions
-model_constant = Model("1", lambda n, a: np.ones(np.shape(n)) * a, CanonicalForm(1, 0, 0, 0))
-model_log_log_n = Model("log(log(n))", lambda n, a, b: a * safe_log(safe_log(n)) + b, CanonicalForm(1, 0, 0, 1))
-model_log_n = Model("log(n)", lambda n, a, b: a * safe_log(n) + b, CanonicalForm(1, 0, 1, 0))
-model_sqrt_n = Model("sqrt(n)", lambda n, a, b: a * np.sqrt(n) + b, CanonicalForm(1, 0.5, 0, 0))
-model_linear_n = Model("n", lambda n, a, b: a * n + b, CanonicalForm(1, 1, 0, 0))
-model_n_log_n = Model("n*log(n)", lambda n, a, b: a * n * safe_log(n) + b, CanonicalForm(1, 1, 1, 0))
-model_n_squared = Model("n**2", lambda n, a, b: a * n**2 + b, CanonicalForm(1, 2, 0, 0))
-model_n_cubed = Model("n**3", lambda n, a, b: a * n**3 + b, CanonicalForm(1, 3, 0, 0))
-model_n_power_k = Model("n**k", lambda n, a, b, k: a * n**k + b, CanonicalForm(1, None, 0, 0))
-model_log_n_squared = Model("(log(n))**2", lambda n, a, b: a * (safe_log(n) ** 2) + b, CanonicalForm(1, 0, 2, 0))
-model_log_n_cubed = Model("(log(n))**3", lambda n, a, b: a * (safe_log(n) ** 3) + b, CanonicalForm(1, 0, 3, 0))
-model_n_exp = Model("2**n", lambda n, a, b: a * (2**n) + b, CanonicalForm(2, 0, 0, 0))
+model_constant = Model(FunctionCanonicalForm(0, 0, 0, 0))
+model_log_log_n = Model(FunctionCanonicalForm(0, 0, 0, 1))
+model_log_n = Model(FunctionCanonicalForm(0, 0, 1, 0))
+model_sqrt_n = Model(FunctionCanonicalForm(0, 0.5, 0, 0))
+model_linear_n = Model(FunctionCanonicalForm(0, 1, 0, 0))
+model_n_log_n = Model(FunctionCanonicalForm(0, 1, 1, 0))
+model_n_squared = Model(FunctionCanonicalForm(0, 2, 0, 0))
+model_n_cubed = Model(FunctionCanonicalForm(0, 3, 0, 0))
+model_n_power_k = Model(FunctionCanonicalForm(0, "k", 0, 0))
+model_log_n_squared = Model(FunctionCanonicalForm(0, 0, 2, 0))
+model_log_n_cubed = Model(FunctionCanonicalForm(0, 0, 3, 0))
+model_n_exp = Model(FunctionCanonicalForm(2, 0, 0, 0))
 
 # List of models
 models = [
@@ -194,28 +203,30 @@ models = [
 ]
 
 
-def get_model(name: str) -> Model:
+def get_model(name: str) -> Model | None:
     if not name.startswith("O(") or not name.endswith(")"):
         print(f"Invalid model name: {name}.  Should be of the form O(...)")
         return None
-
-    # Strip "O(" and ")"
-    name = name[2:-1]
 
     for model in models:
         if model.name == name:
             return model
 
-    # if name matches pattern n**k, return a new model with k harcoded in
+    # Strip "O(" and ")"
+    name = name[2:-1]
+
+    # special case for model_n_power_k
     if name.startswith("n**"):
         k = float(name[3:])
-        return Model(name, lambda n, a, b: a * n**k + b)
+        return Model(FunctionCanonicalForm(0, k, 0, 0))
 
     raise ValueError(f"Unknown model: {name}")
 
 
 def fit_model(n, y, model) -> FittedModel:
-    params, _ = curve_fit(model.func, n, y, p0=[1.0] * model.param_count, maxfev=10000)
+    (params, _) = curve_fit(
+        model.func, n, y, p0=[1.0] * model.param_count, maxfev=10000, full_output=False
+    )
     fitted = FittedModel(model=model, params=params, n=n, y=y)
     return fitted
 
@@ -250,10 +261,7 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     )
 
     fitted_models = fitted_models.sort_values(by="aic", ascending=True)
-    # fitted_models["rank"] = fitted_models["model"].apply(rank)
-    print(fitted_models["model"] <= bound_model_fit)
     fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
-    print(fitted_models)
     better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 
     return CheckBoundResult(
@@ -313,12 +321,9 @@ def remove_outliers(n, y):
     return n[mask], y[mask]
 
 
-
 if __name__ == "__main__":
 
     import unittest
-
-
 
     class TestFittedModelLE(unittest.TestCase):
 

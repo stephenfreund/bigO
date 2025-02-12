@@ -11,18 +11,21 @@ from collections import defaultdict
 from functools import wraps
 from typing import Any, Callable, Literal, TypedDict
 
+import numpy as np
+
+from bigO.analyze import CheckBounds, FunctionData
 
 system_name = "bigO"
 
 
-class FunctionData(TypedDict):
+class RuntimeData(TypedDict):
     tests: dict[str, str]
     observations: list[Any]
 
 
 # Global dictionary to store performance data
-performance_data: dict[str, FunctionData] = defaultdict(
-    lambda: FunctionData(tests={}, observations=[])
+performance_data: dict[str, RuntimeData] = defaultdict(
+    lambda: RuntimeData(tests={}, observations=[])
 )
 
 # Where the performance data is stored.
@@ -66,14 +69,24 @@ def function_hash_value(func: Callable) -> str:
     return hashlib.sha256(code).hexdigest()
 
 
+def function_file_name(func: Callable) -> str:
+    """
+    Returns the file name of the function.
+    """
+    module = inspect.getmodule(func)
+    return module.__file__ if module and module.__file__ else "<unknown>"
+
+def function_name(func: Callable) -> str:
+    """
+    Returns the name of the function.
+    """
+    return func.__name__
+
 def function_full_name(func: Callable) -> str:
     """
     Returns the full name of the function (file + name).
     """
-    func_name = func.__name__
-    module = inspect.getmodule(func)
-    file_name = module.__file__ if module and module.__file__ else "<unknown>"
-    return str((func_name, file_name))
+    return str((function_file_name(func), function_name(func)))
 
   
 def is_tracked(func: Callable) -> bool:
@@ -161,6 +174,7 @@ def check(
     length_function: Callable[..., int],
     time_bound: str | None = None,
     mem_bound: str | None = None,
+    interval: int | None = None
 ) -> Callable:
 
     def decorator(func: Callable) -> Callable:
@@ -173,11 +187,34 @@ def check(
         if mem_bound:
             tests["mem_bound"] = mem_bound
 
-        performance_data[full_name] = FunctionData(tests=tests, observations=[])
+        performance_data[full_name] = RuntimeData(tests=tests, observations=[])
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            return tracked(*args, **kwargs)
+            result = tracked(*args, **kwargs)
+
+            if interval:
+                count = len(performance_data[full_name]["observations"])
+                if count > 0 and count % interval == 0:
+                    records = performance_data[full_name]["observations"]
+                    lengths = [r["length"] for r in records]
+                    times = [r["time"] for r in records]
+                    mems = [r["memory"] for r in records]                    
+                    function_data = FunctionData(
+                        function_name=function_name(func),
+                        file_name=function_file_name(func),
+                        lengths=np.array(lengths),
+                        times=np.array(times),
+                        mems=np.array(mems),
+                    )
+                    check = CheckBounds(function_data, time_bound, mem_bound)
+                    result = check.run()
+                    if result.success:
+                        print(f"Function {full_name} passed bounds check.")
+                    else:
+                        raise ValueError(result.message)
+
+            return result
 
         return wrapper
 
@@ -202,7 +239,7 @@ def abtest(
             "abtest": (alt_full_name, metrics)
         }
 
-        performance_data[full_name] = FunctionData(tests=tests, observations=[])
+        performance_data[full_name] = RuntimeData(tests=tests, observations=[])
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -250,7 +287,7 @@ def save_performance_data() -> None:
             performance_data[key]["tests"] = function_data["tests"]
         else:
             # Key only exists in old_data; add it to performance_data
-            performance_data[key] = FunctionData(
+            performance_data[key] = RuntimeData(
                 tests=function_data["tests"], observations=function_data["observations"]
             )
 

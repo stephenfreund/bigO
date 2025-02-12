@@ -5,6 +5,7 @@ from typing import Callable, List, Literal
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import scipy
 import seaborn as sns
 from scipy.optimize import curve_fit
 
@@ -15,6 +16,9 @@ system_name = "bigO"
 def format_float(value):
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
+
+# disable OptimizeWarning
+# scipy.warnings.filterwarnings("ignore", category=scipy.optimize.OptimizeWarning)
 
 @dataclass
 class FunctionCanonicalForm:
@@ -205,8 +209,7 @@ models = [
 
 def get_model(name: str) -> Model | None:
     if not name.startswith("O(") or not name.endswith(")"):
-        print(f"Invalid model name: {name}.  Should be of the form O(...)")
-        return None
+        raise ValueError(f"Invalid model name: {name}.  Should be of the form O(...)")
 
     for model in models:
         if model.name == name:

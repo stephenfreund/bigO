@@ -47,7 +47,7 @@ def multiply_add(x, n):
 #     nlogn_function(list(np.random.rand(random.randint(100_000, 2_000_000))))
 
 
-@check(lambda x, y: len(x) + len(y), time_bound="O(log(n))")
+@check(lambda x, y: len(x) + len(y), time_bound="O(log(n))", interval=25)
 def linear_function_3(x, y):
     for i in range(199):
         z = x + y

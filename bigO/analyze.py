@@ -7,10 +7,10 @@ from typing import List, Optional
 from matplotlib import gridspec, pyplot as plt
 from matplotlib.figure import SubFigure
 import pandas as pd
+from bigO.abtest import non_parametric_fit, segmented_permutation_test
 import bigO.models as models
 
-# from bigO.abtest import non_parametric_fit, segmented_permutation_test
-from bigO.output import log, log_timer, message
+from bigO.output import log, log_timer, message, set_debug
 import click
 import numpy as np
 import seaborn as sns
@@ -28,18 +28,20 @@ class FunctionData:
     mems: np.ndarray
 
 
+@dataclass
+class Result:
+    success: bool
+    message: str
+
+
 class Analysis(abc.ABC):
 
     @abc.abstractmethod
-    def run(self):
+    def run(self) -> Result:
         pass
 
     @abc.abstractmethod
-    def message(self) -> str:
-        pass
-
-    @abc.abstractmethod
-    def plot(self, fig: SubFigure):
+    def plot(self, fig: SubFigure | None = None):
         pass
 
 
@@ -59,12 +61,14 @@ class InferPerformance(Analysis):
                 self.function_data.lengths, self.function_data.mems
             )
 
-    def message(self) -> str:
         best_time_model = self.fitted_times[0]
         best_mem_model = self.fitted_mems[0]
-        return (
-            f"Inferred Bounds for {self.function_data.function_name}\n"
-            f"Best time model: {best_time_model}\nBest memory model: {best_mem_model}"
+        return Result(
+            success=True,
+            message=(
+                f"Inferred Bounds for {self.function_data.function_name}\n"
+                f"Best time model: {best_time_model}\nBest memory model: {best_mem_model}"
+            ),
         )
 
     def plot_fits(self, ax, models: List[models.FittedModel], color, ylabel, title):
@@ -95,7 +99,9 @@ class InferPerformance(Analysis):
         ax.set_title(title, fontsize=12)
         ax.legend()
 
-    def plot(self, fig: SubFigure):
+    def plot(self, fig: SubFigure | None = None):
+        if fig is None:
+            fig = plt.figure(constrained_layout=True, figsize=(12, 4))
         time_ax, mem_ax, extra = fig.subplots(1, 3)
         extra.axis("off")
         self.plot_fits(
@@ -126,35 +132,36 @@ class CheckBounds(Analysis):
         self.time_bound = models.get_model(time_bound) if time_bound else None
         self.mem_bound = models.get_model(mem_bound) if mem_bound else None
 
-    def run(self):
+    def run(self) -> Result:
         with log_timer(
-            "Infer time and memory models for {self.function_data.function_name}"
+            f"Infer time and memory models for {self.function_data.function_name}"
         ):
-            with log_timer("Check time models"):
-                if self.time_bound:
+            if self.time_bound:
+                with log_timer("Check time models"):
                     self.time_check = models.check_bound(
                         self.function_data.lengths,
                         self.function_data.times,
                         self.time_bound,
                     )
-                else:
-                    self.time_check = None
-            with log_timer("Infer memory models"):
-                if self.mem_bound:
+            else:
+                self.time_check = None
+            if self.mem_bound:
+                with log_timer("Check memory models"):
                     self.mem_check = models.check_bound(
                         self.function_data.lengths,
                         self.function_data.mems,
                         self.mem_bound,
                     )
-                else:
-                    self.mem_check = None
+            else:
+                self.mem_check = None
 
-    def message(self) -> str:
-        message = [f"Bounds for {self.function_data.function_name}"]
+        success = True
+        message = []
         if self.time_check:
+            success = success and len(self.time_check.better_models) == 0
             message += [
-                f"Declared Time Bound: {self.time_bound}",
-                f"Models with better fits: ",
+                f"Declared Time Bound for {self.function_data.function_name} is {self.time_bound}, ",
+                f"but these models with worse performance better fit the data: ",
                 str(
                     self.time_check.better_models[["model", "pvalue"]].to_string(
                         index=False
@@ -162,12 +169,20 @@ class CheckBounds(Analysis):
                 ),
             ]
         if self.mem_check:
+            success = success and len(self.time_check.better_models) == 0
             message += [
-                f"Declared Memory Bound: {self.mem_bound}",
-                f"Models with better fits: ",
-                str(self.mem_check.better_models),
+                f"Declared Memory Bound for {self.function_data.function_name}: {self.mem_bound}, ",
+                f"but these models with worse performance better fit the data: ",
+                str(
+                    self.mem_check.better_models[["model", "pvalue"]].to_string(
+                        index=False
+                    )
+                ),
             ]
-        return "\n".join(message)
+        return Result(
+            success=success,
+            message="\n".join(message)
+        )
 
     def plot_fits(
         self, ax, check_result: models.CheckBoundResult, color, ylabel, title
@@ -207,7 +222,9 @@ class CheckBounds(Analysis):
         ax.set_title(title, fontsize=12)
         ax.legend()
 
-    def plot(self, fig: SubFigure):
+    def plot(self, fig: SubFigure | None = None):
+        if fig is None:
+            fig = plt.figure(constrained_layout=True, figsize=(12, 4))
         time_ax, mem_ax, extra = fig.subplots(1, 3)
         extra.axis("off")
         if self.time_check:
@@ -233,11 +250,10 @@ class ABTest(Analysis):
         self.a = a
         self.b = b
         self.metric = metric
-        print(f"AB Test: A is {a.function_name}; B is {b.function_name}")
 
     def run(self):
         with log_timer(
-            "Infer time and memory models for {self.function_data.function_name}"
+            f"AB Test"
         ):
             combined_labels = np.concatenate(
                 [["A"] * len(self.a.lengths), ["B"] * len(self.b.lengths)]
@@ -262,15 +278,20 @@ class ABTest(Analysis):
                 num_points=100,
             )
 
-    def message(self) -> str:
         message = [
             f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}"
         ]
         for report in self.ab_results:
-            message += [str(report)]
-        return "\n".join(message)
+            message += [ f"  {x}" for x in str(report).splitlines()]
+        return Result(
+            success=True,
+            message="\n".join(message)
+        )
 
-    def plot(self, fig: SubFigure):
+    def plot(self, fig: SubFigure | None):
+        if fig is None:
+            fig = plt.figure(constrained_layout=True, figsize=(12, 4))
+
         num_figs = min(1 + len(self.ab_results), 4)
         axes = fig.subplots(1, num_figs)
 
@@ -377,7 +398,16 @@ class ABTest(Analysis):
     default=None,
     help="Specify the output file to process.",
 )
-def main(output_file: Optional[str]):
+@click.option(
+    "--show-debug",
+    "show_debug",
+    is_flag=True,
+    help="Show debug output.",
+)
+def main(output_file: Optional[str], show_debug: bool):
+
+    set_debug(show_debug)
+
     file_name = output_file or f"{system_name}_data.json"
     with log_timer("Loading data"):
         with open(file_name, "r") as f:
@@ -437,9 +467,10 @@ def main(output_file: Optional[str]):
     gs_main.tight_layout(fig, rect=(0, 0, 1, 1))
 
     for index, item in enumerate(work_items):
+        message("-" * 80)
         subfig = fig.add_subfigure(gs_main[index, 0])
-        item.run()
-        message(textwrap.indent(item.message(), "  "))
+        result = item.run()
+        message(textwrap.indent(result.message, "  "))
         message("")
         item.plot(subfig)
 

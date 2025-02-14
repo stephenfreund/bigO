@@ -1,13 +1,11 @@
 from dataclasses import dataclass
-import json
-import sys
-from typing import Callable, List, Literal
+from typing import List, Literal, Tuple
+import warnings
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
-import scipy
-import seaborn as sns
 from scipy.optimize import curve_fit
+
+from bigO.util import remove_outliers
 
 
 system_name = "bigO"
@@ -16,9 +14,6 @@ system_name = "bigO"
 def format_float(value):
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
-
-# disable OptimizeWarning
-# scipy.warnings.filterwarnings("ignore", category=scipy.optimize.OptimizeWarning)
 
 @dataclass
 class FunctionCanonicalForm:
@@ -136,8 +131,11 @@ class FittedModel:
             y = self.y
         n_points = len(y)  # Number of data points
 
-        if n_points < 2 or rss <= 0:
+        if n_points < 2 or rss < 0:
             return np.inf
+
+        if rss == 0:
+            return -np.inf
 
         aic = 2 * k + n_points * np.log(rss / n_points)
         return aic
@@ -226,30 +224,59 @@ def get_model(name: str) -> Model | None:
     raise ValueError(f"Unknown model: {name}")
 
 
-def fit_model(n, y, model) -> FittedModel:
-    (params, _) = curve_fit(
-        model.func, n, y, p0=[1.0] * model.param_count, maxfev=10000, full_output=False
-    )
+def fit_model(n, y, model) -> Tuple[FittedModel | None, List[str]]:
+    with warnings.catch_warnings(record=True) as w:
+        # Attempt to fit
+        (params, _) = curve_fit(
+            model.func,
+            n,
+            y,
+            p0=[1.0] * model.param_count,
+            maxfev=10000,
+            full_output=False,
+        )
+
+        # If any relevant warning occurred, return None
+        if w:
+            messages = [f"fit_model {model.name}: {wm.message}" for wm in w]
+            reported = []
+            for message in messages:
+                if message not in reported:
+                    reported += [message]
+            return None, reported
+
+    # Otherwise, build and return the FittedModel
     fitted = FittedModel(model=model, params=params, n=n, y=y)
-    return fitted
+    return fitted, []
 
 
-def fit_models(n, y) -> List[FittedModel]:
+def fit_models(n, y) -> Tuple[List[FittedModel], List[str]]:
     """Fit models to data and order by increasing aic. Return list of (model, aic) tuples."""
-    fits = [fit_model(n, y, model) for model in models]
-    return sorted(fits, key=lambda x: x.aic())
+    results = [fit_model(n, y, model) for model in models]
+    fits = [f for f, _ in results if f is not None]
+    warnings = [warning for _, warnings in results for warning in warnings]
+    return sorted(fits, key=lambda x: x.aic()), warnings
 
 
 @dataclass
 class CheckBoundResult:
     declared_bound_fit: FittedModel
     better_models: pd.DataFrame
+    warnings: List[str]
 
 
 def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     lengths, y = remove_outliers(n, y)
-    fits = fit_models(lengths, y)
-    bound_model_fit = fit_model(lengths, y, bound)
+    bound_model_fit, bound_warnings = fit_model(lengths, y, bound)
+
+    if bound_model_fit is None:
+        ws = "\n".join(bound_warnings)
+        raise ValueError(
+            f"Could not fit bound model {bound.name}.  Possible causes:\n{ws}"
+        )
+
+    fits, warnings = fit_models(lengths, y)
+    warnings += bound_warnings
 
     fitted_models = pd.DataFrame(
         [
@@ -264,19 +291,23 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     )
 
     fitted_models = fitted_models.sort_values(by="aic", ascending=True)
+    fitted_models = fitted_models[fitted_models["aic"] <= bound_model_fit.aic()]
     fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
     better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 
-    return CheckBoundResult(
-        bound_model_fit,
-        better_models,
-    )
+    return CheckBoundResult(bound_model_fit, better_models, warnings)
 
 
-def infer_bound(n: np.ndarray, y: np.ndarray) -> List[FittedModel]:
+@dataclass
+class InferBoundResult:
+    models: List[FittedModel]
+    warnings: List[str]
+
+
+def infer_bound(n: np.ndarray, y: np.ndarray) -> InferBoundResult:
     lengths, y = remove_outliers(n, y)
-    fits = fit_models(lengths, y)
-    return fits
+    fits, warnings = fit_models(lengths, y)
+    return InferBoundResult(fits, warnings)
 
 
 def pvalue_for_better_fit(
@@ -306,22 +337,6 @@ def pvalue_for_better_fit(
         if bootstrap_delta > 2 * delta:
             s += 1
     return s / trials
-
-
-def remove_outliers(n, y):
-    """
-    Remove outliers using IQR method.
-    """
-    y = np.array(y, dtype=float)
-    n = np.array(n, dtype=float)
-    if len(y) < 4:
-        return n, y
-    Q1, Q3 = np.percentile(y, [25, 75])
-    IQR = Q3 - Q1
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-    mask = (y >= lower_bound) & (y <= upper_bound)
-    return n[mask], y[mask]
 
 
 if __name__ == "__main__":

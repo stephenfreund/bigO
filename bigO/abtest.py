@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, List, Literal, Tuple
+import warnings
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -8,7 +9,9 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from bigO.output import debug
+from bigO.output import log
+from bigO.util import remove_outliers, remove_outliers_df
+
 
 def loess_fit(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -24,7 +27,9 @@ def loess_fit(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     smooth = lowess(sorted_df["T"], sorted_df["n"], frac=0.25, return_sorted=True)
     return smooth[:, 0], smooth[:, 1]
 
+
 from statsmodels.nonparametric.kernel_regression import KernelReg
+
 
 def fit_kernel_regression(df: pd.DataFrame):
     """
@@ -38,20 +43,24 @@ def fit_kernel_regression(df: pd.DataFrame):
     df = df.sort_values("n")
     x = df["n"].values
     y = df["T"].values
-    
-    kr = KernelReg(endog=[y], exog=[x], var_type='c', bw='cv_ls')
+
+    kr = KernelReg(endog=[y], exog=[x], var_type="c", bw="cv_ls")
 
     # Fit/predict on the same x (you could predict on a finer grid if you like)
     y_fit, y_std = kr.fit([x])  # y_std is the std error of predictions
 
     return x, y_fit
 
+
 import numpy as np
 import pandas as pd
 from scipy.interpolate import UnivariateSpline
 from typing import Tuple
 
-def fit_spline(df: pd.DataFrame, s: float = None, k: int = 3) -> Tuple[np.ndarray, np.ndarray]:
+
+def fit_spline(
+    df: pd.DataFrame, s: float | None = None, k: int = 3
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Fits a smoothing spline to the provided DataFrame.
 
@@ -77,14 +86,18 @@ def fit_spline(df: pd.DataFrame, s: float = None, k: int = 3) -> Tuple[np.ndarra
     spline = UnivariateSpline(x, y, s=10000, k=k)
 
     # Evaluate the spline on a dense grid for a smooth curve
-    x_new = np.linspace(x.min(), x.max(), len(x) * 5)
+    x_new = np.linspace(x.min(), x.max(), len(x) * 5)  # type: ignore
     y_new = spline(x_new)
-    
+
+    assert isinstance(x_new, np.ndarray)
+    assert isinstance(y_new, np.ndarray)
+
     return x_new, y_new
 
 
 def non_parametric_fit(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     return fit_spline(df)
+
 
 def interpolate_common_n(
     n_A: np.ndarray, T_A: np.ndarray, n_B: np.ndarray, T_B: np.ndarray, num_points=200
@@ -395,20 +408,20 @@ def detect_dynamic_threshold_crossings(
     n_common: np.ndarray,
     T_A_interp: np.ndarray,
     T_B_interp: np.ndarray,
-    threshold_proportion: float
+    threshold_proportion: float,
 ) -> List[Tuple[float, str]]:
     """
-    Detects points where the absolute difference between T_A_interp and T_B_interp 
-    crosses a dynamic threshold. The threshold is computed as a proportion of the 
+    Detects points where the absolute difference between T_A_interp and T_B_interp
+    crosses a dynamic threshold. The threshold is computed as a proportion of the
     midpoint of the two values at each n.
 
     Specifically, we define for each n:
-    
+
       f(n) = |T_A(n) - T_B(n)| - (threshold_proportion * ((T_A(n) + T_B(n)) / 2))
-    
-    A zero crossing of f(n) indicates that the difference between the curves 
-    equals the threshold. A change from positive to negative means the curves 
-    have come "closer" than the threshold, and a change from negative to positive 
+
+    A zero crossing of f(n) indicates that the difference between the curves
+    equals the threshold. A change from positive to negative means the curves
+    have come "closer" than the threshold, and a change from negative to positive
     means they have moved "further" apart.
 
     Parameters:
@@ -424,7 +437,7 @@ def detect_dynamic_threshold_crossings(
     """
     diff = T_A_interp - T_B_interp
     abs_diff = np.abs(diff)
-    
+
     # Compute the midpoint of the two curves at each n.
     midpoint = (T_A_interp + T_B_interp) / 2
     # Compute the dynamic threshold at each n.
@@ -448,14 +461,14 @@ def detect_dynamic_threshold_crossings(
         # Linear interpolation to estimate the n at which f(n) crosses zero.
         fraction = (0 - f1) / (f2 - f1)
         n_cross = n1 + fraction * (n2 - n1)
-        
+
         # Determine the event type:
         # If f goes from positive to negative, |T_A-T_B| dropped below the threshold.
         if f1 > 0 and f2 < 0:
             event = "closer"
         else:
             event = "further"
-            
+
         threshold_events.append((n_cross, event))
 
     return threshold_events
@@ -510,52 +523,74 @@ def define_segments(
     return segments
 
 
+@dataclass
+class SegmentedPermutationTestResult:
+    segments: List[ABTestResult]
+    warnings: List[str]
+
+
 def segmented_permutation_test(
     df: pd.DataFrame,
     num_permutations=1000,
     num_points=50,
     seed=None,
-) -> List[ABTestResult]:
+) -> SegmentedPermutationTestResult:
+    with warnings.catch_warnings(record=True) as w:
 
-    # Fit LOESS to original groups
-    group_A = df[df["label"] == "A"]
-    group_B = df[df["label"] == "B"]
+        group_A = df[df["label"] == "A"]
+        group_B = df[df["label"] == "B"]
 
-    n_A, T_A = non_parametric_fit(group_A)
-    n_B, T_B = non_parametric_fit(group_B)
-    n_common, T_A_interp, T_B_interp = interpolate_common_n(
-        n_A, T_A, n_B, T_B, num_points=num_points
-    )
-    crossover_n = [ n for n,_ in detect_dynamic_threshold_crossings(n_common, T_A_interp, T_B_interp, 0.1) ]
-    # crossover_n = detect_crossover_points(n_common, T_A_interp, T_B_interp)
-    debug(f"Detected Crossover Points at n = {crossover_n}\n")
+        group_A = remove_outliers_df(group_A, "n", "T")
+        group_B = remove_outliers_df(group_B, "n", "T")
 
-    segments = define_segments(n_common, crossover_n)
-    debug(f"Defined Segments:")
-    for idx, segment in enumerate(segments, 1):
-        debug(f"Segment {idx}: n = {segment[0]:.2f} to n = {segment[1]:.2f}")
-    debug()
-
-    # Initialize list to store results
-    results = []
-
-    for idx, segment in enumerate(segments, 1):
-        if segment[0] < segment[1]:
-            debug(
-                f"Performing Permutation Test for Segment {idx}: n = {segment[0]:.2f} to n = {segment[1]:.2f}"
+        n_A, T_A = non_parametric_fit(group_A)
+        n_B, T_B = non_parametric_fit(group_B)
+        n_common, T_A_interp, T_B_interp = interpolate_common_n(
+            n_A, T_A, n_B, T_B, num_points=num_points
+        )
+        crossover_n = [
+            n
+            for n, _ in detect_dynamic_threshold_crossings(
+                n_common, T_A_interp, T_B_interp, 0.1
             )
-            df_segment = df[(df["n"] >= segment[0]) & (df["n"] <= segment[1])].copy()
-            if len(df_segment) > 8:
-                result = permutation_test(
-                    df_segment,
-                    num_permutations,
-                    num_points,
-                    seed,
-                )
-                debug(f"{result.faster} is faster (p-value={result.p_value:.3f})\n")
-                results += [result]
+        ]
+        # crossover_n = detect_crossover_points(n_common, T_A_interp, T_B_interp)
+        log(f"Detected Crossover Points at n = {crossover_n}\n")
 
-    return results
+        segments = define_segments(n_common, crossover_n)
+        log(f"Defined Segments:")
+        for idx, segment in enumerate(segments, 1):
+            log(f"Segment {idx}: n = {segment[0]:.2f} to n = {segment[1]:.2f}")
+        log()
+
+        # Initialize list to store results
+        results = []
+
+        for idx, segment in enumerate(segments, 1):
+            if segment[0] < segment[1]:
+                log(
+                    f"Performing Permutation Test for Segment {idx}: n = {segment[0]:.2f} to n = {segment[1]:.2f}"
+                )
+                df_segment = df[
+                    (df["n"] >= segment[0]) & (df["n"] <= segment[1])
+                ].copy()
+                if len(df_segment) > 8:
+                    result = permutation_test(
+                        df_segment,
+                        num_permutations,
+                        num_points,
+                        seed,
+                    )
+                    log(f"{result.faster} is faster (p-value={result.p_value:.3f})\n")
+                    results += [result]
+
+        messages = [f"ab_test: {wm.message}" for wm in w]
+        reported = []
+        for message in messages:
+            if message not in reported:
+                reported += [message]
+
+    return SegmentedPermutationTestResult(segments=results, warnings=reported)
 
 
 def plot_segmented_abtest_results(

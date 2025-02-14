@@ -1,20 +1,22 @@
 import abc
 from dataclasses import dataclass
 import json
+import os
 import textwrap
 from typing import List, Optional
 
 from matplotlib import gridspec, pyplot as plt
-from matplotlib.figure import SubFigure
+from matplotlib.figure import Figure, SubFigure
 import pandas as pd
 from bigO.abtest import non_parametric_fit, segmented_permutation_test
 import bigO.models as models
 
-from bigO.output import log, log_timer, message, set_debug
+from bigO.output import log, timer, set_debug
 import click
 import numpy as np
 import seaborn as sns
 
+import webbrowser
 
 system_name = "bigO"
 
@@ -32,16 +34,21 @@ class FunctionData:
 class Result:
     success: bool
     message: str
+    warnings: List[str]
 
 
 class Analysis(abc.ABC):
+
+    @abc.abstractmethod
+    def title(self) -> str:
+        pass
 
     @abc.abstractmethod
     def run(self) -> Result:
         pass
 
     @abc.abstractmethod
-    def plot(self, fig: SubFigure | None = None):
+    def plot(self, fig: Figure | SubFigure | None = None):
         pass
 
 
@@ -50,10 +57,11 @@ class InferPerformance(Analysis):
     def __init__(self, function_data: FunctionData):
         self.function_data = function_data
 
+    def title(self) -> str:
+        return f"Infer performance for {self.function_data.function_name}"
+
     def run(self):
-        with log_timer(
-            f"Infer time and memory models for {self.function_data.function_name}"
-        ):
+        with timer(self.title()):
             self.fitted_times = models.infer_bound(
                 self.function_data.lengths, self.function_data.times
             )
@@ -61,14 +69,17 @@ class InferPerformance(Analysis):
                 self.function_data.lengths, self.function_data.mems
             )
 
-        best_time_model = self.fitted_times[0]
-        best_mem_model = self.fitted_mems[0]
+        best_time_model = (
+            self.fitted_times.models[0] if self.fitted_times.models else None
+        )
+        best_mem_model = self.fitted_mems.models[0] if self.fitted_mems.models else None
         return Result(
             success=True,
             message=(
                 f"Inferred Bounds for {self.function_data.function_name}\n"
                 f"Best time model: {best_time_model}\nBest memory model: {best_mem_model}"
             ),
+            warnings=self.fitted_times.warnings + self.fitted_mems.warnings,
         )
 
     def plot_fits(self, ax, models: List[models.FittedModel], color, ylabel, title):
@@ -78,7 +89,7 @@ class InferPerformance(Analysis):
             y=best_fit.y,
             ax=ax,
             color=color,
-            label="Data (outliers removed)",
+            label="Data",
         )
         styles = ["-", "--", "-.", ":"]
         for i, model in enumerate(models[0:4]):
@@ -99,24 +110,24 @@ class InferPerformance(Analysis):
         ax.set_title(title, fontsize=12)
         ax.legend()
 
-    def plot(self, fig: SubFigure | None = None):
+    def plot(self, fig: Figure | SubFigure | None = None):
         if fig is None:
             fig = plt.figure(constrained_layout=True, figsize=(12, 4))
         time_ax, mem_ax, extra = fig.subplots(1, 3)
         extra.axis("off")
         self.plot_fits(
             time_ax,
-            self.fitted_times,
+            self.fitted_times.models,
             color="C0",
             ylabel="Time (s)",
-            title=f"{self.function_data.function_name}: {self.fitted_times[0]}",
+            title=f"{self.function_data.function_name}: {self.fitted_times.models[0]}",
         )
         self.plot_fits(
             mem_ax,
-            self.fitted_mems,
+            self.fitted_mems.models,
             color="C1",
             ylabel="Memory",
-            title=f"{self.function_data.function_name}: {self.fitted_mems[0]}",
+            title=f"{self.function_data.function_name}: {self.fitted_mems.models[0]}",
         )
 
 
@@ -132,12 +143,17 @@ class CheckBounds(Analysis):
         self.time_bound = models.get_model(time_bound) if time_bound else None
         self.mem_bound = models.get_model(mem_bound) if mem_bound else None
 
+    def title(self) -> str:
+        return (
+            f"Check bounds for {self.function_data.function_name}."
+            + (f" Time: {self.time_bound}." if self.time_bound else "")
+            + (f" Mem: {self.mem_bound}." if self.mem_bound else "")
+        )
+
     def run(self) -> Result:
-        with log_timer(
-            f"Infer time and memory models for {self.function_data.function_name}"
-        ):
+        with timer(self.title()):
             if self.time_bound:
-                with log_timer("Check time models"):
+                with timer("Check time models"):
                     self.time_check = models.check_bound(
                         self.function_data.lengths,
                         self.function_data.times,
@@ -146,7 +162,7 @@ class CheckBounds(Analysis):
             else:
                 self.time_check = None
             if self.mem_bound:
-                with log_timer("Check memory models"):
+                with timer("Check memory models"):
                     self.mem_check = models.check_bound(
                         self.function_data.lengths,
                         self.function_data.mems,
@@ -162,14 +178,10 @@ class CheckBounds(Analysis):
             message += [
                 f"Declared Time Bound for {self.function_data.function_name} is {self.time_bound}, ",
                 f"but these models with worse performance better fit the data: ",
-                str(
-                    self.time_check.better_models[["model", "pvalue"]].to_string(
-                        index=False
-                    )
-                ),
+                str(self.time_check.better_models.to_string(index=False)),
             ]
         if self.mem_check:
-            success = success and len(self.time_check.better_models) == 0
+            success = success and len(self.mem_check.better_models) == 0
             message += [
                 f"Declared Memory Bound for {self.function_data.function_name}: {self.mem_bound}, ",
                 f"but these models with worse performance better fit the data: ",
@@ -179,10 +191,10 @@ class CheckBounds(Analysis):
                     )
                 ),
             ]
-        return Result(
-            success=success,
-            message="\n".join(message)
+        warnings = (self.time_check.warnings if self.time_check else []) + (
+            self.mem_check.warnings if self.mem_check else []
         )
+        return Result(success=success, message="\n".join(message), warnings=warnings)
 
     def plot_fits(
         self, ax, check_result: models.CheckBoundResult, color, ylabel, title
@@ -193,7 +205,7 @@ class CheckBounds(Analysis):
             y=declared_fit.y,
             ax=ax,
             color=color,
-            label="Data (outliers removed)",
+            label="Data",
         )
         sns.lineplot(
             x=declared_fit.n,
@@ -202,19 +214,18 @@ class CheckBounds(Analysis):
             color=color,
             label=f"{declared_fit}: {declared_fit}",
         )
-        for i, (_, row) in enumerate(
-            check_result.better_models.take(np.arange(0, 4)).iterrows()
-        ):
-            (model, pvalue) = row["model"], row["pvalue"]
-            sns.lineplot(
-                x=model.n,
-                y=model.predict(model.n),
-                ax=ax,
-                label=f"{model} (p={pvalue:.3f})",
-                color="red",
-                linewidth=2 if i == 0 else 1,
-                alpha=(1 - i * 0.2),
-            )
+        for i, (_, row) in enumerate(check_result.better_models.iterrows()):
+            if i < 4:
+                (model, pvalue) = row["model"], row["pvalue"]
+                sns.lineplot(
+                    x=model.n,
+                    y=model.predict(model.n),
+                    ax=ax,
+                    label=f"{model} (p={pvalue:.3f})",
+                    color="red",
+                    linewidth=2 if i == 0 else 1,
+                    alpha=(1 - i * 0.2),
+                )
 
         ax.set_xlabel("Input Size (n)")
         ax.set_ylabel(ylabel)
@@ -222,7 +233,7 @@ class CheckBounds(Analysis):
         ax.set_title(title, fontsize=12)
         ax.legend()
 
-    def plot(self, fig: SubFigure | None = None):
+    def plot(self, fig: Figure | SubFigure | None = None):
         if fig is None:
             fig = plt.figure(constrained_layout=True, figsize=(12, 4))
         time_ax, mem_ax, extra = fig.subplots(1, 3)
@@ -245,16 +256,97 @@ class CheckBounds(Analysis):
             )
 
 
+class CheckLimits(Analysis):
+    def __init__(
+        self,
+        function_data: FunctionData,
+        time_limit: float | None = None,
+        mem_limit: float | None = None,
+        length_limit: int | None = None,
+    ):
+        super().__init__()
+        self.function_data = function_data
+        self.time_limit = time_limit
+        self.mem_limit = mem_limit
+        self.length_limit = length_limit
+
+    def title(self) -> str:
+        return (
+            f"Check limits for {self.function_data.function_name}. "
+            + (f"Time: {self.time_limit}." if self.time_limit else "")
+            + (f"Mem: {self.mem_limit}." if self.mem_limit else "")
+            + (f"Length: {self.length_limit}." if self.length_limit else "")
+        )
+
+    def run(self) -> Result:
+
+        with timer(self.title()):
+            success = True
+            message = []
+            if self.time_limit:
+                if not (self.function_data.times.max() < self.time_limit):
+                    message += [
+                        f"Declared time limit for {self.function_data.function_name} is {self.time_limit}, ",
+                        f"but the largest observed time is {self.function_data.times.max()}.",
+                    ]
+                    success = False
+            if self.mem_limit:
+                if not (self.function_data.mems.max() < self.mem_limit):
+                    message += [
+                        f"Declared memory limit for {self.function_data.function_name} is {self.mem_limit}, ",
+                        f"but the largest observed memory is {self.function_data.mems.max()}.",
+                    ]
+                    success = False
+            if self.length_limit:
+                if not (self.function_data.lengths.max() < self.length_limit):
+                    message += [
+                        f"Declared length limit for {self.function_data.function_name} is {self.length_limit}, ",
+                        f"but the largest observed length is {self.function_data.lengths.max()}.",
+                    ]
+                    success = False
+
+            warnings = []
+            return Result(
+                success=success, message="\n".join(message), warnings=warnings
+            )
+
+    def plot(self, fig: Figure | SubFigure | None = None):
+        if fig is None:
+            fig = plt.figure(constrained_layout=True, figsize=(12, 4))
+        time_ax, mem_ax, extra = fig.subplots(1, 3)
+        extra.axis("off")
+        if self.time_limit:
+            sns.histplot(
+                x=self.function_data.times,
+                color="C0",
+                ax=time_ax,
+            )
+            time_ax.title.set_text(f"{self.function_data.function_name}: Time (s)")
+            time_ax.axvline(self.time_limit, color="red")
+            time_ax.legend(["Declared limit", "Data"])
+
+        if self.mem_limit:
+            sns.histplot(
+                self.function_data.mems,
+                color="C1",
+                title=f"{self.function_data.function_name}: Memory",
+                ax=mem_ax,
+            )
+            mem_ax.axvline(self.mem_limit, color="red")
+            mem_ax.legend(["Declared limit", "Data"])
+
+
 class ABTest(Analysis):
     def __init__(self, a: FunctionData, b: FunctionData, metric: str):
         self.a = a
         self.b = b
         self.metric = metric
 
+    def title(self) -> str:
+        return f"AB Test: {self.a.function_name} vs. {self.b.function_name}"
+
     def run(self):
-        with log_timer(
-            f"AB Test"
-        ):
+        with timer(self.title()):
             combined_labels = np.concatenate(
                 [["A"] * len(self.a.lengths), ["B"] * len(self.b.lengths)]
             )
@@ -281,18 +373,17 @@ class ABTest(Analysis):
         message = [
             f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}"
         ]
-        for report in self.ab_results:
-            message += [ f"  {x}" for x in str(report).splitlines()]
+        for report in self.ab_results.segments:
+            message += [f"  {x}" for x in str(report).splitlines()]
         return Result(
-            success=True,
-            message="\n".join(message)
+            success=True, message="\n".join(message), warnings=self.ab_results.warnings
         )
 
-    def plot(self, fig: SubFigure | None):
+    def plot(self, fig: Figure | SubFigure | None = None):
         if fig is None:
             fig = plt.figure(constrained_layout=True, figsize=(12, 4))
 
-        num_figs = min(1 + len(self.ab_results), 4)
+        num_figs = min(1 + len(self.ab_results.segments), 4)
         axes = fig.subplots(1, num_figs)
 
         # ----------------------------------------
@@ -337,7 +428,7 @@ class ABTest(Analysis):
             ax=axes[0],
         )
 
-        for index, result in enumerate(self.ab_results):
+        for index, result in enumerate(self.ab_results.segments):
             if index > 0:
                 axes[0].axvline(
                     result.n_common.min(),
@@ -358,7 +449,7 @@ class ABTest(Analysis):
         # 4.2. Difference in Running Times and Permutation Test by Segment
         # ----------------------------------------
 
-        for segment_number, result in enumerate(self.ab_results[-3:]):
+        for segment_number, result in enumerate(self.ab_results.segments[-3:]):
             index = segment_number
 
             valid_perm_stats = result.perm_stats[np.isfinite(result.perm_stats)]
@@ -399,28 +490,34 @@ class ABTest(Analysis):
     help="Specify the output file to process.",
 )
 @click.option(
-    "--show-debug",
-    "show_debug",
+    "--debug",
+    "debug",
     is_flag=True,
     help="Show debug output.",
 )
-def main(output_file: Optional[str], show_debug: bool):
+@click.option(
+    "--open-plots",
+    "open_plots",
+    is_flag=True,
+    help="Open the plots in a web browser.",
+)
+def main(output_file: Optional[str], debug: bool, open_plots: bool):
 
-    set_debug(show_debug)
+    set_debug(debug)
 
     file_name = output_file or f"{system_name}_data.json"
-    with log_timer("Loading data"):
+    with timer("Loading data"):
         with open(file_name, "r") as f:
             data = json.load(f)
 
-    with log_timer("Building work items"):
+    with timer("Building work items"):
         entries = {}
         work_items: List[Analysis] = []
         for key, function_record in data.items():
             key_str = key.strip("()")
             parts = key_str.split(",")
-            function_name = parts[0].strip().strip("'\"")
-            file_name = parts[1].strip().strip("'\"")
+            function_name = parts[1].strip().strip("'\"")
+            file_name = parts[0].strip().strip("'\"")
 
             records = function_record["observations"]
             log(f"{function_name}: {len(records)} records...")
@@ -443,10 +540,14 @@ def main(output_file: Optional[str], show_debug: bool):
             function_data = entries[key]
             time_bound = function_record["tests"].get("time_bound", None)
             mem_bound = function_record["tests"].get("mem_bound", None)
+            time_limit = function_record["tests"].get("time_limit", None)
+            mem_limit = function_record["tests"].get("mem_limit", None)
             ab_test = function_record["tests"].get("abtest", None)
             if time_bound or mem_bound:
                 work_items += [CheckBounds(function_data, time_bound, mem_bound)]
                 used_in_tests.add(key)
+            if time_limit or mem_limit:
+                work_items += [CheckLimits(function_data, time_limit, mem_limit)]
             elif ab_test:
                 alt, metrics = ab_test
                 if "time" in metrics:
@@ -458,25 +559,38 @@ def main(output_file: Optional[str], show_debug: bool):
 
         for key, function_record in data.items():
             if key not in used_in_tests:
-                work_items += [InferPerformance(function_data)]
+                function_data = entries[key]
+                if all(function_data.lengths >= 0):
+                    work_items += [InferPerformance(function_data)]
 
     sns.set_style("whitegrid")
     sns.set_palette("tab10")
     fig = plt.figure(constrained_layout=True, figsize=(12, 4 * len(work_items)))
-    gs_main = gridspec.GridSpec(nrows=len(work_items), ncols=1, figure=fig)
+    gs_main = gridspec.GridSpec(nrows=len(work_items), ncols=1, figure=fig, hspace=0.1)
     gs_main.tight_layout(fig, rect=(0, 0, 1, 1))
 
     for index, item in enumerate(work_items):
-        message("-" * 80)
+        print()
+        print(item.title())
+        print("-" * len(item.title()))
         subfig = fig.add_subfigure(gs_main[index, 0])
         result = item.run()
-        message(textwrap.indent(result.message, "  "))
-        message("")
+        print(textwrap.indent(result.message, "  "))
+        print("")
+        if result.warnings:
+            print(textwrap.indent("\n".join(["Warnings:"] + result.warnings), "  "))
+            print()
         item.plot(subfig)
+        if result.success:
+            subfig.suptitle(f"{item.title()}")
+        else:
+            subfig.suptitle(f"FAILED -- {item.title()}", color="red")
 
     filename = f"{system_name}.pdf"
     plt.savefig(filename)
     print(f"{filename} written.")
+    if open_plots:
+        webbrowser.open(f"file://{os.getcwd()}/{filename}")
 
 
 if __name__ == "__main__":

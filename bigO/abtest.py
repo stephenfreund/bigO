@@ -4,13 +4,11 @@ import warnings
 import seaborn as sns
 import numpy as np
 import pandas as pd
-from sklearn.discriminant_analysis import StandardScaler
 from statsmodels.nonparametric.smoothers_lowess import lowess
-from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
 from bigO.output import log
-from bigO.util import remove_outliers, remove_outliers_df
+from bigO.outliers import remove_outliers_df
 
 
 def loess_fit(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:

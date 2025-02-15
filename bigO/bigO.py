@@ -5,7 +5,6 @@ import json
 import random
 import time
 import marshal
-import sys
 
 from collections import defaultdict
 from functools import wraps

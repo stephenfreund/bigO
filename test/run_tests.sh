@@ -16,4 +16,5 @@ for test_file in "${test_files[@]}"; do
     python3 "$test_file"
 done
 
-bigo-report --open-plots
+bigo-report --open-report --html
+

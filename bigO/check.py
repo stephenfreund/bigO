@@ -1,6 +1,6 @@
-from os import error
 import time
 import tracemalloc
+from typing import Callable
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -8,7 +8,6 @@ from functools import wraps
 
 from bigO.models import (
     Model,
-    better_fit_pvalue_vectorized,
     fit_model,
     fit_models,
     get_model,
@@ -49,7 +48,7 @@ def error_plot(func_name, bound_type, n, y, bound_model_fit, best_fit, pvalue):
 
 
 def check(
-    length_computation: callable,
+    length_computation: Callable,
     time_bound: str | None = None,
     mem_bound: str | None = None,
     frequency: int = 25,

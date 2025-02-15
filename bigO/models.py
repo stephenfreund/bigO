@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
 
-from bigO.util import remove_outliers
+from bigO.outliers import remove_outliers
 
 
 system_name = "bigO"

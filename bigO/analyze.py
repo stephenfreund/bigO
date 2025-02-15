@@ -40,7 +40,6 @@ class Result:
 
 
 class Analysis(abc.ABC):
-
     @abc.abstractmethod
     def title(self) -> str:
         pass
@@ -55,7 +54,6 @@ class Analysis(abc.ABC):
 
 
 class InferPerformance(Analysis):
-
     def __init__(self, function_data: FunctionData):
         self.function_data = function_data
 

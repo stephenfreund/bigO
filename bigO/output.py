@@ -18,7 +18,6 @@ def set_debug(value):
 
 
 class Output(threading.local):
-
     def __init__(self):
         self.pending = None
         self.contexts = []
@@ -29,7 +28,6 @@ class Output(threading.local):
         return self.OutputContext(self, key, color="cyan", start="[", end="]")
 
     class OutputContext:
-
         def __init__(
             self,
             outer,

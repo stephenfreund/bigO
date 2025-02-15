@@ -29,7 +29,6 @@ class FunctionCanonicalForm:
     u: float
 
     def __str__(self) -> str:
-
         def parameter(x):
             return f"{format_float(x)}" if x != "k" else "k"
 
@@ -154,7 +153,6 @@ class FittedModel:
         return f"{self.params[0]} * {str(self)} + {self.params[1]}"
 
     def __le__(self, other):
-
         def val_or_last_param(x):
             return x if x != "k" else self.params[-1]
 
@@ -344,7 +342,6 @@ if __name__ == "__main__":
     import unittest
 
     class TestFittedModelLE(unittest.TestCase):
-
         def setUp(self):
             # Dummy data for n and y.
             self.n_data = np.array([2, 3, 4])

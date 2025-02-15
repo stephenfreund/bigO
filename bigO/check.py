@@ -54,7 +54,6 @@ def check(
     mem_bound: str | None = None,
     frequency: int = 25,
 ):
-
     def decorator(func):
 
         func_name = func.__name__
@@ -120,9 +119,7 @@ def check(
                 }
                 performance_data.append(new_entry)
 
-                if (len(performance_data) > 0
-                    and len(performance_data) % frequency == 0
-                ):
+                if len(performance_data) > 0 and len(performance_data) % frequency == 0:
                     if time_model:
                         check_bound("time", time_model)
                     if mem_model:

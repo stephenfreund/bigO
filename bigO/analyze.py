@@ -1,5 +1,7 @@
 import abc
+import base64
 from dataclasses import dataclass
+import io
 import json
 import os
 import textwrap
@@ -387,7 +389,7 @@ class ABTest(Analysis):
         axes = fig.subplots(1, num_figs)
 
         # ----------------------------------------
-        # 4.1. Scatter Plots with LOESS Curves (First Visualization)
+        # 4.1. Scatter Plots with Curves (First Visualization)
         # ----------------------------------------
 
         df_A = self.combined_df[self.combined_df.label == "A"]
@@ -473,7 +475,7 @@ class ABTest(Analysis):
                 label="Observed Statistic",
             )
 
-            axes[index + 1].set_xlabel("Signed Area Between LOESS Curves")
+            axes[index + 1].set_xlabel("Signed Area Between Smoothed Curves")
             axes[index + 1].set_ylabel("Frequency")
             axes[index + 1].set_title(
                 f"{result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is better (p-value={result.p_value:.3f})"
@@ -496,12 +498,18 @@ class ABTest(Analysis):
     help="Show debug output.",
 )
 @click.option(
-    "--open-plots",
-    "open_plots",
+    "--open-report",
+    "open_report",
     is_flag=True,
-    help="Open the plots in a web browser.",
+    help="Open the output in a web browser.",
 )
-def main(output_file: Optional[str], debug: bool, open_plots: bool):
+@click.option(
+    "--html",
+    "html",
+    is_flag=True,
+    help="Generate an HTML report instead of a PDF.",
+)
+def main(output_file: Optional[str], debug: bool, open_report: bool, html: bool):
 
     set_debug(debug)
 
@@ -563,6 +571,15 @@ def main(output_file: Optional[str], debug: bool, open_plots: bool):
                 if all(function_data.lengths >= 0):
                     work_items += [InferPerformance(function_data)]
 
+    if html:
+        filename = run_html(work_items)
+    else:
+        filename = run_pdf(work_items)
+    if open_report:
+        webbrowser.open(f"file://{os.getcwd()}/{filename}")
+
+
+def run_pdf(work_items) -> str:
     sns.set_style("whitegrid")
     sns.set_palette("tab10")
     fig = plt.figure(constrained_layout=True, figsize=(12, 4 * len(work_items)))
@@ -589,8 +606,86 @@ def main(output_file: Optional[str], debug: bool, open_plots: bool):
     filename = f"{system_name}.pdf"
     plt.savefig(filename)
     print(f"{filename} written.")
-    if open_plots:
-        webbrowser.open(f"file://{os.getcwd()}/{filename}")
+    return filename
+
+
+def run_html(work_items) -> str:
+    # Assume these are defined elsewhere:
+    # - work_items: a list of objects, each with methods .title(), .run(), and .plot(ax)
+    # - system_name: a string used for naming the output file (without extension)
+    # - open_plots: a boolean flag to open the result in a web browser
+
+    # Set up the plotting style and palette.
+    sns.set_style("whitegrid")
+    sns.set_palette("tab10")
+
+    # Prepare an HTML page as a list of strings.
+    html_lines = [
+        "<html>",
+        "<head>",
+        "  <meta charset='utf-8'>",
+        "  <title>Work Items Output</title>",
+        "</head>",
+        "<body>",
+        "  <h1>BigO Report</h1>",
+    ]
+
+    # Process each work item separately.
+    for item in work_items:
+        title = item.title()
+        print(f"{title}...")
+        result = item.run()
+        mark = (
+            "<span style='color:blue;'>&#10003;</span>"
+            if result.success
+            else "<span style='color:red;'>&#10007;</span>"
+        )
+        html_lines.append(f"<h2>{mark} {title}</h2>")
+
+        # Create a new figure and axis for this work item.
+        fig_item = Figure(figsize=(12, 4))
+
+        # Run the work item and capture its result.
+        result = item.run()
+
+        # Add the result message.
+        html_lines.append("<pre>")
+        html_lines.append(textwrap.indent(result.message, "  "))
+        html_lines.append("</pre>")
+
+        # Let the work item create its plot on the current axis.
+        item.plot(fig_item)
+
+        # Save the figure as a PNG image into a bytes buffer.
+        buf = io.BytesIO()
+        fig_item.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+        # Embed the PNG image (as a Base64 data URL) in the HTML.
+        html_lines.append(
+            f'<img src="data:image/png;base64,{image_base64}" alt="Plot for {title}">'
+        )
+
+        # Close the figure to free memory.
+        plt.close(fig_item)
+
+        # If there are warnings, include them.
+        if result.warnings:
+            warnings_text = "\n".join(["Warnings:"] + result.warnings)
+            html_lines.append("<pre>")
+            html_lines.append(textwrap.indent(warnings_text, "  "))
+            html_lines.append("</pre>")
+
+    html_lines.append("</body>")
+    html_lines.append("</html>")
+
+    # Write the HTML content to a file.
+    html_filename = f"{system_name}.html"
+    with open(html_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(html_lines))
+    print(f"{html_filename} written.")
+    return html_filename
 
 
 if __name__ == "__main__":

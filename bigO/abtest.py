@@ -172,7 +172,6 @@ def permutation_test(
     Parameters:
     - df: Combined DataFrame with 'n', 'T', and 'label' columns.
     - num_permutations: Number of permutations to perform.
-    - frac: LOESS smoothing parameter.
     - num_points: Number of points in the common n range.
     - seed: Random seed for reproducibility.
 
@@ -190,7 +189,7 @@ def permutation_test(
     if seed is not None:
         np.random.seed(seed)
 
-    # Fit LOESS to original groups
+    # Smooth curves for original groups
     group_A = df[df["label"] == "A"]
     group_B = df[df["label"] == "B"]
 
@@ -219,7 +218,7 @@ def permutation_test(
         perm_group_A = df[df["shuffled_label"] == "A"]
         perm_group_B = df[df["shuffled_label"] == "B"]
 
-        # Fit LOESS to permuted groups
+        # Fit smoothed curves to permuted groups
         try:
             n_perm_A, T_perm_A = non_parametric_fit(perm_group_A)
             n_perm_B, T_perm_B = non_parametric_fit(perm_group_B)
@@ -272,7 +271,7 @@ def plot_abtest_results(
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 
     # ----------------------------------------
-    # 4.1. Scatter Plots with LOESS Curves (First Visualization)
+    # 4.1. Scatter Plots with Smoothed Curves (First Visualization)
     # ----------------------------------------
 
     df_A = df[df["label"] == "A"]
@@ -296,18 +295,16 @@ def plot_abtest_results(
         ax=axes[0],
     )
 
-    # Plot LOESS curves for 'A' and 'B'
+    # Plot smoothed curves for 'A' and 'B'
     sns.lineplot(
         x=result.n_common,
         y=result.T_A_interp,
-        # label="f_A LOESS",
         ax=axes[0],
     )
 
     sns.lineplot(
         x=result.n_common,
         y=result.T_B_interp,
-        # label="f_B LOESS",
         ax=axes[0],
     )
 
@@ -360,7 +357,7 @@ def plot_abtest_results(
         label="Observed Statistic",
     )
 
-    axes[2].set_xlabel("Signed Area Between LOESS Curves")
+    axes[2].set_xlabel("Signed Area Between Smoothed Curves")
     axes[2].set_ylabel("Frequency")
     axes[2].set_title(
         f"Permutation Test Distribution\n{result.faster} is faster (p-value={result.p_value:.3f})"
@@ -600,7 +597,7 @@ def plot_segmented_abtest_results(
     fig, axes = plt.subplots(1, num_figs, figsize=(num_figs * 4, 4))
 
     # ----------------------------------------
-    # 4.1. Scatter Plots with LOESS Curves (First Visualization)
+    # 4.1. Scatter Plots with Smoothed Curves (First Visualization)
     # ----------------------------------------
 
     df_A = df[df["label"] == "A"]
@@ -684,7 +681,7 @@ def plot_segmented_abtest_results(
             label="Observed Statistic",
         )
 
-        axes[index + 1].set_xlabel("Signed Area Between LOESS Curves")
+        axes[index + 1].set_xlabel("Signed Area Between Smoothed Curves")
         axes[index + 1].set_ylabel("Frequency")
         axes[index + 1].set_title(
             f"Permutation Test for {result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is faster (p-value={result.p_value:.3f})"

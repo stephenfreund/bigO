@@ -169,6 +169,25 @@ class FittedModel:
                 return False
 
         # coverages to a constant other than 0.
+        return True
+
+    def __lt__(self, other):
+        def val_or_last_param(x):
+            return x if x != "k" else self.params[-1]
+
+        cf = self.model.canonical_form
+        cfo = other.model.canonical_form
+
+        c_params = [val_or_last_param(x) for x in (cf.r, cf.s, cf.t, cf.u)]
+        co_params = [val_or_last_param(x) for x in (cfo.r, cfo.s, cfo.t, cfo.u)]
+
+        for c, co in zip(c_params, co_params):
+            if c < co:
+                return True
+            elif c > co:
+                return False
+
+        # coverages to a constant other than 0.
         return False
 
 

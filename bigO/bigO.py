@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal, TypedDict
 
 import numpy as np
 
-from bigO.analyze import CheckBounds, CheckLimits, FunctionData
+from bigO.report import CheckBounds, CheckLimits, FunctionData
 
 system_name = "bigO"
 
@@ -27,15 +27,15 @@ class RuntimeData(TypedDict):
 
 
 # Global dictionary to store performance data
-performance_data: dict[str, RuntimeData] = defaultdict(
+_performance_data: dict[str, RuntimeData] = defaultdict(
     lambda: RuntimeData(tests={}, observations=[])
 )
 
 # Where the performance data is stored.
-performance_data_filename = f"{system_name}_data.json"
+_performance_data_filename = f"{system_name}_data.json"
 
 # Hashes of function implementations, used to discard outdated perf info for modified functions
-hash_function_values: dict[str, Any] = {}
+_hash_function_values: dict[str, Any] = {}
 
 # python_version = (sys.version_info[0], sys.version_info[1])
 # # Disabled for now
@@ -52,33 +52,37 @@ def set_performance_data_filename(fname: str) -> str:
 
     Returns the previous file name.
     """
-    global performance_data_filename
-    global performance_data
-    old_performance_data_filename = performance_data_filename
-    performance_data_filename = fname
+    global _performance_data_filename
+    global _performance_data
+    old_performance_data_filename = _performance_data_filename
+    _performance_data_filename = fname
     try:
-        with open(performance_data_filename, "r") as infile:
-            performance_data = json.load(infile)
+        with open(_performance_data_filename, "r") as infile:
+            _performance_data = json.load(infile)
     except FileNotFoundError:
-        performance_data = dict()
+        _performance_data = dict()
     return old_performance_data_filename
 
 
-def get_performance_data(key):
-    if key not in performance_data:
-        performance_data[key] = RuntimeData(tests={}, observations=[])
-    return performance_data[key]
+def _get_performance_data(key):
+    if key not in _performance_data:
+        _performance_data[key] = RuntimeData(tests={}, observations=[])
+    return _performance_data[key]
 
 
-def gather_function_data(func: Callable) -> FunctionData:
-    full_name = function_full_name(func)
-    records = performance_data[full_name]["observations"]
+def _gather_function_data(func: Callable) -> FunctionData:
+    full_name = _function_full_name(func)
+    hash = _hash_function_values.get(full_name, None)
+    assert hash is not None, "Function hash not found"
+    records = [
+        r for r in _performance_data[full_name]["observations"] if r["hash"] == hash
+    ]
     lengths = [r["length"] for r in records]
     times = [r["time"] for r in records]
     mems = [r["memory"] for r in records]
     function_data = FunctionData(
-        function_name=function_name(func),
-        file_name=function_file_name(func),
+        function_name=_function_name(func),
+        file_name=_function_file_name(func),
         lengths=np.array(lengths),
         times=np.array(times),
         mems=np.array(mems),
@@ -94,7 +98,7 @@ def function_hash_value(func: Callable) -> str:
     return hashlib.sha256(code).hexdigest()
 
 
-def function_file_name(func: Callable) -> str:
+def _function_file_name(func: Callable) -> str:
     """
     Returns the file name of the function.
     """
@@ -102,21 +106,21 @@ def function_file_name(func: Callable) -> str:
     return module.__file__ if module and module.__file__ else "<unknown>"
 
 
-def function_name(func: Callable) -> str:
+def _function_name(func: Callable) -> str:
     """
     Returns the name of the function.
     """
     return func.__name__
 
 
-def function_full_name(func: Callable) -> str:
+def _function_full_name(func: Callable) -> str:
     """
     Returns the full name of the function (file + name).
     """
-    return str((function_file_name(func), function_name(func)))
+    return str((_function_file_name(func), _function_name(func)))
 
 
-def is_tracked(func: Callable) -> bool:
+def _is_tracked(func: Callable) -> bool:
     """
     Check if the given function or any function in its __wrapped__ chain
     has been marked as tracked.
@@ -144,7 +148,7 @@ def track(length_function: Callable[..., int]) -> Callable:
     def decorator(func: Callable) -> Callable:
 
         # If the function is already tracked, return it as is.
-        if is_tracked(func):
+        if _is_tracked(func):
             return func
 
         # Store a hash of the code to enable discarding old perf data if the
@@ -152,8 +156,8 @@ def track(length_function: Callable[..., int]) -> Callable:
         hash_value = function_hash_value(func)
 
         # Get the full name of the function (file + name), and save the hash value.
-        full_name = function_full_name(func)
-        hash_function_values[full_name] = hash_value
+        full_name = _function_full_name(func)
+        _hash_function_values[full_name] = hash_value
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -188,7 +192,7 @@ def track(length_function: Callable[..., int]) -> Callable:
                         "memory": peak,  # Peak memory usage in bytes
                         "nobjects": nobjects,
                     }
-                    performance_data[full_name]["observations"].append(perf_data)
+                    _performance_data[full_name]["observations"].append(perf_data)
             return result
 
         wrapper.__is_tracked__ = True  # type: ignore[attr-defined]
@@ -197,10 +201,10 @@ def track(length_function: Callable[..., int]) -> Callable:
     return decorator
 
 
-def check(
+def bounds(
     length_function: Callable[..., int],
-    time_bound: str | None = None,
-    mem_bound: str | None = None,
+    time: str | None = None,
+    mem: str | None = None,
     interval: int | None = None,
 ) -> Callable:
     """
@@ -211,8 +215,8 @@ def check(
     Args:
         length_function (callable): A function that calculates the "length"
                                        of one or more arguments.
-        time_bound (str, optional): A string representing the time complexity bound.
-        mem_bound (str, optional): A string representing the memory complexity bound.
+        time (str, optional): A string representing the time complexity bound.
+        mem (str, optional): A string representing the memory complexity bound.
         interval (int, optional): Number of calls between dynamic checks.
 
     Returns:
@@ -224,19 +228,19 @@ def check(
 
     def decorator(func: Callable) -> Callable:
         # wrap the function with the track decorator
-        full_name = function_full_name(func)
+        full_name = _function_full_name(func)
         tracked = track(length_function)(func)
 
         # record what we're testing for
         tests = {}
-        if time_bound:
-            tests["time_bound"] = time_bound
-        if mem_bound:
-            tests["mem_bound"] = mem_bound
+        if time:
+            tests["time_bound"] = time
+        if mem:
+            tests["mem_bound"] = mem
 
-        performance_data[full_name] = get_performance_data(full_name)
-        performance_data[full_name]["tests"] = (
-            performance_data[full_name]["tests"] | tests
+        _performance_data[full_name] = _get_performance_data(full_name)
+        _performance_data[full_name]["tests"] = (
+            _performance_data[full_name]["tests"] | tests
         )
 
         @wraps(func)
@@ -244,16 +248,9 @@ def check(
             result = tracked(*args, **kwargs)
 
             if interval:
-                count = len(performance_data[full_name]["observations"])
+                count = len(_performance_data[full_name]["observations"])
                 if count > 0 and count % interval == 0:
-                    # check performance, and raise an error if it doesn't meet the bounds
-                    function_data = gather_function_data(func)
-                    check = CheckBounds(function_data, time_bound, mem_bound)
-                    result = check.run()
-                    if result.success:
-                        print(f"Function {full_name} passed bounds check.")
-                    else:
-                        raise BigOError(result.message)
+                    check(func)
 
             return result
 
@@ -262,11 +259,11 @@ def check(
     return decorator
 
 
-def limit(
+def limits(
     length_function: Callable[..., int] | None = None,
-    length_limit: int | None = None,
-    time_limit: float | None = None,
-    mem_limit: float | None = None,
+    length: int | None = None,
+    time: float | None = None,
+    mem: float | None = None,
     interval: int | None = None,
 ) -> Callable:
     """
@@ -277,9 +274,9 @@ def limit(
     Args:
         length_function (callable, optional): A function that calculates the "length"
                                        of one or more arguments.
-        length_limit (int, optional): The maximum allowed input length.
-        time_limit (float, optional): The maximum allowed time in seconds.
-        mem_limit (float, optional): The maximum allowed memory in bytes.
+        length (int, optional): The maximum allowed input length.
+        time (float, optional): The maximum allowed time in seconds.
+        mem (float, optional): The maximum allowed memory in bytes.
         interval (int, optional): Number of calls between dynamic checks.
 
     Returns:
@@ -290,25 +287,25 @@ def limit(
     """
 
     if length_function is None:
-        if length_limit is not None:
+        if length is not None:
             raise ValueError("length_function must be provided if length_limit is set")
         length_function = lambda *args, **kwargs: -1
 
     def decorator(func: Callable) -> Callable:
         tests = {}
-        if time_limit:
-            tests["time_limit"] = time_limit
-        if mem_limit:
-            tests["mem_limit"] = mem_limit
-        if length_limit:
-            tests["length_limit"] = length_limit
+        if time:
+            tests["time_limit"] = time
+        if mem:
+            tests["mem_limit"] = mem
+        if length:
+            tests["length_limit"] = length
 
-        full_name = function_full_name(func)
+        full_name = _function_full_name(func)
         tracked = track(length_function)(func)
 
-        performance_data[full_name] = get_performance_data(full_name)
-        performance_data[full_name]["tests"] = (
-            performance_data[full_name]["tests"] | tests
+        _performance_data[full_name] = _get_performance_data(full_name)
+        _performance_data[full_name]["tests"] = (
+            _performance_data[full_name]["tests"] | tests
         )
 
         @wraps(func)
@@ -316,18 +313,9 @@ def limit(
             result = tracked(*args, **kwargs)
 
             if interval:
-                count = len(performance_data[full_name]["observations"])
+                count = len(_performance_data[full_name]["observations"])
                 if count > 0 and count % interval == 0:
-                    # check performance, and raise an error if it doesn't meet the limits
-                    function_data = gather_function_data(func)
-                    check = CheckLimits(
-                        function_data, time_limit, mem_limit, length_limit
-                    )
-                    result = check.run()
-                    if result.success:
-                        print(f"Function {full_name} passed limits check.")
-                    else:
-                        raise BigOError(result.message)
+                    check(func)
 
             return result
 
@@ -336,10 +324,42 @@ def limit(
     return decorator
 
 
-def abtest(
+def check(func: Callable) -> None:
+    """
+    Programmatically run the checks for a given function.
+    Generates an exception if the function does not pass its bounds or limits checks.
+    """
+    full_name = _function_full_name(func)
+    tests = _performance_data[full_name]["tests"]
+    function_data = _gather_function_data(func)
+
+    if "length_limit" in tests:
+        check = CheckLimits(
+            function_data,
+            tests.get("time_limit", None),
+            tests.get("mem_limit", None),
+            tests.get("length_limit", None),
+        )
+        result = check.run()
+        if not result.success:
+            raise BigOError(result.message)
+    elif "mem_bound" in tests or "time_bound" in tests:
+        check = CheckBounds(
+            function_data, tests.get("time_bound", None), tests.get("mem_bound", None)
+        )
+        result = check.run()
+        if not result.success:
+            raise BigOError(result.message)
+    else:
+        raise BigOError(
+            f"Function {full_name} has no tests defined. Use the @limit or @check decorator."
+        )
+
+
+def ab_test(
     length_function: Callable[..., int],
     alt: Callable,
-    metric: Literal["time", "memory", "both"] = "time",
+    metric: Literal["time", "mem", "both"] = "time",
 ) -> Callable:
     """
     A decorator to perform A/B testing between a function and an alternative implementation.
@@ -350,25 +370,25 @@ def abtest(
         length_function (callable): A function that calculates the "length"
                                        of one or more arguments.
         alt (callable): An alternative implementation to compare against.
-        metric (str, optional): The performance metric to compare ("time", "memory", or "both").
+        metric (str, optional): The performance metric to compare ("time", "mem", or "both").
 
     Returns:
         callable: The decorated function.
     """
 
     def decorator(func: Callable) -> Callable:
-        full_name = function_full_name(func)
-        alt_full_name = function_full_name(alt)
+        full_name = _function_full_name(func)
+        alt_full_name = _function_full_name(alt)
         tracked = track(length_function)(func)
         alt_tracked = track(length_function)(alt)
 
-        metrics = [metric] if metric != "both" else ["time", "memory"]
+        metrics = [metric] if metric != "both" else ["time", "mem"]
 
         tests = {"abtest": (alt_full_name, metrics)}
 
-        performance_data[full_name] = get_performance_data(full_name)
-        performance_data[full_name]["tests"] = (
-            performance_data[full_name]["tests"] | tests
+        _performance_data[full_name] = _get_performance_data(full_name)
+        _performance_data[full_name]["tests"] = (
+            _performance_data[full_name]["tests"] | tests
         )
 
         @wraps(func)
@@ -390,15 +410,15 @@ def save_performance_data() -> None:
     """
 
     # Load any saved data into a dictionary.
-    global performance_data_filename
+    global _performance_data_filename
     try:
-        with open(performance_data_filename, "r") as infile:
+        with open(_performance_data_filename, "r") as infile:
             old_data = json.load(infile)
         # Discard any outdated entries.
         for full_name in old_data:
-            if full_name in hash_function_values:
+            if full_name in _hash_function_values:
                 validated = []
-                current_hash = hash_function_values[full_name]
+                current_hash = _hash_function_values[full_name]
                 for entry in old_data[full_name]["observations"]:
                     if entry["hash"] == current_hash:
                         validated.append(entry)
@@ -411,15 +431,15 @@ def save_performance_data() -> None:
     # Merge the old with the new dictionary
     for key, function_data in old_data.items():
 
-        if key in performance_data:
+        if key in _performance_data:
             # Key exists in both dicts; extend the list from performance_data with the new entries
-            performance_data[key]["observations"].extend(function_data["observations"])
+            _performance_data[key]["observations"].extend(function_data["observations"])
             # performance_data[key]["tests"] = function_data["tests"]
         else:
             # Key only exists in old_data; add it to performance_data
-            performance_data[key] = RuntimeData(
+            _performance_data[key] = RuntimeData(
                 tests=function_data["tests"], observations=function_data["observations"]
             )
 
-    with open(performance_data_filename, "w") as f:
-        json.dump(performance_data, f, indent=4)
+    with open(_performance_data_filename, "w") as f:
+        json.dump(_performance_data, f, indent=4)

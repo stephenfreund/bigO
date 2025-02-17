@@ -1,13 +1,13 @@
 import random
-from bigO import check
+from bigO import bounds
 import numpy as np
 
-from bigO.bigO import abtest, limit, track
+from bigO.bigO import ab_test, limits, track
 
 import numpy as np
 
 
-@limit(len, time_limit=0.1)
+@limits(len, time=0.1)
 def insertion_sort(arr: np.ndarray) -> np.ndarray:
     """
     Sorts a 1D numpy array using insertion sort, which is very fast for small arrays (< 10 elements).

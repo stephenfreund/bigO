@@ -173,14 +173,14 @@ class CheckBounds(Analysis):
 
         success = True
         message = []
-        if self.time_check:
+        if self.time_check and len(self.time_check.better_models) > 0:
             success = success and len(self.time_check.better_models) == 0
             message += [
                 f"Declared Time Bound for {self.function_data.function_name} is {self.time_bound}, ",
                 f"but these models with worse performance better fit the data: ",
                 str(self.time_check.better_models.to_string(index=False)),
             ]
-        if self.mem_check:
+        if self.mem_check and len(self.mem_check.better_models) > 0:
             success = success and len(self.mem_check.better_models) == 0
             message += [
                 f"Declared Memory Bound for {self.function_data.function_name}: {self.mem_bound}, ",
@@ -622,7 +622,7 @@ def run_html(work_items) -> str:
         "<html>",
         "<head>",
         "  <meta charset='utf-8'>",
-        "  <title>Work Items Output</title>",
+        "  <title>BigO Report</title>",
         "</head>",
         "<body>",
         "  <h1>BigO Report</h1>",

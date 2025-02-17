@@ -6,6 +6,7 @@ readme = "README.md"
 keywords = ["performance", "profiler"]
 authors = [
     {name = "Emery Berger", email = "emery.berger@gmail.com"},
+    {name = "Stephen Freund", email = "sfreund@williams.edu"}
 ]
 requires-python = ">=3.8"
 classifiers = [
@@ -42,7 +43,7 @@ dependencies = [
 "Repository" = "https://github.com/plasma-umass/bigO"
 
 [project.scripts]
-bigo-report = "bigO.analyze:main"
+bigo-report = "bigO.report:main"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

@@ -1,8 +1,8 @@
 import random
-from bigO import check
+from bigO import bounds
 import numpy as np
 
-from bigO.bigO import abtest, track
+from bigO.bigO import ab_test, track
 
 import numpy as np
 
@@ -33,7 +33,7 @@ def insertion_sort(arr: np.ndarray) -> np.ndarray:
     return sorted_arr
 
 
-@abtest(lambda x: len(x), alt=insertion_sort)
+@ab_test(lambda x: len(x), alt=insertion_sort)
 def quick_sort(arr: np.ndarray) -> np.ndarray:
     """
     Perform quick sort on a numpy array and return a new sorted array.

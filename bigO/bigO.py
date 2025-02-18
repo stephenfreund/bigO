@@ -243,18 +243,23 @@ def bounds(
             _performance_data[full_name]["tests"] | tests
         )
 
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            result = tracked(*args, **kwargs)
+        if interval is None:
 
-            if interval:
+            return tracked
+
+        else:
+
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                result = tracked(*args, **kwargs)
+
                 count = len(_performance_data[full_name]["observations"])
-                if count > 0 and count % interval == 0:
+                if count > 0 and count % interval == 0:  # type: ignore
                     check(func)
 
-            return result
+                return result
 
-        return wrapper
+            return wrapper
 
     return decorator
 
@@ -308,18 +313,23 @@ def limits(
             _performance_data[full_name]["tests"] | tests
         )
 
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            result = tracked(*args, **kwargs)
+        if interval is None:
 
-            if interval:
+            return tracked
+
+        else:
+
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                result = tracked(*args, **kwargs)
+
                 count = len(_performance_data[full_name]["observations"])
-                if count > 0 and count % interval == 0:
+                if count > 0 and count % interval == 0:  # type: ignore
                     check(func)
 
-            return result
+                return result
 
-        return wrapper
+            return wrapper
 
     return decorator
 

@@ -308,7 +308,7 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     )
 
     fitted_models = fitted_models.sort_values(by="aic", ascending=True)
-    fitted_models = fitted_models[fitted_models["aic"] <= bound_model_fit.aic()]
+    fitted_models = fitted_models[fitted_models["aic"] < bound_model_fit.aic()]
     fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
     better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 

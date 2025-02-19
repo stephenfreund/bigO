@@ -183,9 +183,10 @@ def plot_complexities_from_file(
         function_name = parts[0].strip().strip("'\"")
         file_name = parts[1].strip().strip("'\"")
 
-        lengths = [r["length"] for r in records]
-        times = [r[metric] for r in records]
-        mems = [r["memory"] for r in records]
+        observations = records["observations"]
+        lengths = [r["length"] for r in observations]
+        times = [r[metric] for r in observations]
+        mems = [r["memory"] for r in observations]
 
         entries.append((function_name, file_name, lengths, times, mems))
 

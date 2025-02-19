@@ -7,7 +7,7 @@ from bigO.bigO import ab_test, limits, track
 import numpy as np
 
 
-@limits(len, time=0.1)
+@limits(len, time=0.1, mem=1_000_000, length=1800)
 def insertion_sort(arr: np.ndarray) -> np.ndarray:
     """
     Sorts a 1D numpy array using insertion sort, which is very fast for small arrays (< 10 elements).

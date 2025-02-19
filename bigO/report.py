@@ -89,20 +89,29 @@ class InferPerformance(Analysis):
             y=best_fit.y,
             ax=ax,
             color=color,
+            alpha=0.7,
             label="Data",
         )
-        styles = ["-", "--", "-.", ":"]
-        for i, model in enumerate(models[0:4]):
-            sns.lineplot(
-                x=model.n,
-                y=model.predict(model.n),
-                ax=ax,
-                label=f"{model}",
-                color=color,
-                linewidth=2 if i == 0 else 1,
-                linestyle=styles[i],
-                alpha=(1 - i * 0.2),
-            )
+        sns.lineplot(
+            x=best_fit.n,
+            y=best_fit.predict(best_fit.n),
+            ax=ax,
+            color=color,
+            linewidth=2,
+            label=f"Best fit: {best_fit}",
+        )
+        # styles = ["-", "--", "-.", ":"]
+        # for i, model in enumerate(models[0:4]):
+        #     sns.lineplot(
+        #         x=model.n,
+        #         y=model.predict(model.n),
+        #         ax=ax,
+        #         label=f"{model}",
+        #         color=color,
+        #         linewidth=2 if i == 0 else 1,
+        #         linestyle=styles[i],
+        #         alpha=(1 - i * 0.2),
+        #     )
 
         ax.set_xlabel("Input Size (n)")
         ax.set_ylabel(ylabel)
@@ -120,14 +129,14 @@ class InferPerformance(Analysis):
             self.fitted_times.models,
             color="C0",
             ylabel="Time (s)",
-            title=f"{self.function_data.function_name}: {self.fitted_times.models[0]}",
+            title=f"{self.function_data.function_name} inferred time: {self.fitted_times.models[0]}",
         )
         self.plot_fits(
             mem_ax,
             self.fitted_mems.models,
             color="C1",
             ylabel="Memory",
-            title=f"{self.function_data.function_name}: {self.fitted_mems.models[0]}",
+            title=f"{self.function_data.function_name} inferred memory: {self.fitted_mems.models[0]}",
         )
 
 
@@ -146,8 +155,8 @@ class CheckBounds(Analysis):
     def title(self) -> str:
         return (
             f"Check bounds for {self.function_data.function_name}."
-            + (f" Time: {self.time_bound}." if self.time_bound else "")
-            + (f" Mem: {self.mem_bound}." if self.mem_bound else "")
+            # + (f" Time: {self.time_bound}." if self.time_bound else "")
+            # + (f" Mem: {self.mem_bound}." if self.mem_bound else "")
         )
 
     def run(self) -> Result:
@@ -205,6 +214,7 @@ class CheckBounds(Analysis):
             y=declared_fit.y,
             ax=ax,
             color=color,
+            alpha=0.7,
             label="Data",
         )
         sns.lineplot(
@@ -212,20 +222,32 @@ class CheckBounds(Analysis):
             y=declared_fit.predict(declared_fit.n),
             ax=ax,
             color=color,
-            label=f"{declared_fit}: {declared_fit}",
+            label=f"Declared: {declared_fit}",
         )
-        for i, (_, row) in enumerate(check_result.better_models.iterrows()):
-            if i < 4:
-                (model, pvalue) = row["model"], row["pvalue"]
-                sns.lineplot(
-                    x=model.n,
-                    y=model.predict(model.n),
-                    ax=ax,
-                    label=f"{model} (p={pvalue:.3f})",
-                    color="red",
-                    linewidth=2 if i == 0 else 1,
-                    alpha=(1 - i * 0.2),
-                )
+        best_fit = check_result.better_models.iloc[0]
+        best_model = best_fit["model"]
+        pvalue = best_fit["pvalue"]
+        sns.lineplot(
+            x=best_model.n,
+            y=best_model.predict(best_model.n),
+            ax=ax,
+            color="red",
+            label=f"Best fit: {best_model} (p={pvalue:.3f})",
+            linewidth=2,
+        )
+
+        # for i, (_, row) in enumerate(check_result.better_models.iterrows()):
+        #     if i < 4:
+        #         (model, pvalue) = row["model"], row["pvalue"]
+        #         sns.lineplot(
+        #             x=model.n,
+        #             y=model.predict(model.n),
+        #             ax=ax,
+        #             label=f"{model} (p={pvalue:.3f})",
+        #             color="red",
+        #             linewidth=2 if i == 0 else 1,
+        #             alpha=(1 - i * 0.2),
+        #         )
 
         ax.set_xlabel("Input Size (n)")
         ax.set_ylabel(ylabel)
@@ -244,16 +266,20 @@ class CheckBounds(Analysis):
                 self.time_check,
                 color="C0",
                 ylabel="Time (s)",
-                title=f"{self.function_data.function_name}: Time Bound",
+                title=f"{self.function_data.function_name} time bound",
             )
+        else:
+            time_ax.axis("off")
         if self.mem_check:
             self.plot_fits(
                 mem_ax,
                 self.mem_check,
                 color="C1",
                 ylabel="Memory",
-                title=f"{self.function_data.function_name}: Mem Bound",
+                title=f"{self.function_data.function_name}: mem bound",
             )
+        else:
+            mem_ax.axis("off")
 
 
 class CheckLimits(Analysis):
@@ -273,9 +299,9 @@ class CheckLimits(Analysis):
     def title(self) -> str:
         return (
             f"Check limits for {self.function_data.function_name}. "
-            + (f"Time: {self.time_limit}." if self.time_limit else "")
-            + (f"Mem: {self.mem_limit}." if self.mem_limit else "")
-            + (f"Length: {self.length_limit}." if self.length_limit else "")
+            # + (f"Time: {self.time_limit}." if self.time_limit else "")
+            # + (f"Mem: {self.mem_limit}." if self.mem_limit else "")
+            # + (f"Length: {self.length_limit}." if self.length_limit else "")
         )
 
     def run(self) -> Result:
@@ -313,27 +339,56 @@ class CheckLimits(Analysis):
     def plot(self, fig: Figure | SubFigure | None = None):
         if fig is None:
             fig = plt.figure(constrained_layout=True, figsize=(12, 4))
-        time_ax, mem_ax, extra = fig.subplots(1, 3)
-        extra.axis("off")
+        time_ax, mem_ax, len_ax = fig.subplots(1, 3)
         if self.time_limit:
             sns.histplot(
                 x=self.function_data.times,
                 color="C0",
                 ax=time_ax,
+                label="Data",
             )
-            time_ax.title.set_text(f"{self.function_data.function_name}: Time (s)")
-            time_ax.axvline(self.time_limit, color="red")
-            time_ax.legend(["Declared limit", "Data"])
+            time_ax.title.set_text(f"{self.function_data.function_name}")
+            time_ax.set_xlabel("Time (s)")
+            time_ax.axvline(
+                self.time_limit, color="red", label=f"Declared limit: {self.time_limit}"
+            )
+            time_ax.legend()
+        else:
+            time_ax.axis("off")
 
         if self.mem_limit:
             sns.histplot(
                 self.function_data.mems,
                 color="C1",
-                title=f"{self.function_data.function_name}: Memory",
                 ax=mem_ax,
+                label="Data",
             )
-            mem_ax.axvline(self.mem_limit, color="red")
-            mem_ax.legend(["Declared limit", "Data"])
+            mem_ax.title.set_text(f"{self.function_data.function_name}")
+            mem_ax.set_xlabel("Memory")
+            mem_ax.axvline(
+                self.mem_limit, color="red", label=f"Declared limit: {self.mem_limit}"
+            )
+            mem_ax.legend()
+        else:
+            mem_ax.axis("off")
+
+        if self.length_limit:
+            sns.histplot(
+                self.function_data.lengths,
+                color="C2",
+                ax=len_ax,
+                label="Data",
+            )
+            len_ax.title.set_text(f"{self.function_data.function_name}")
+            len_ax.set_xlabel("Length")
+            len_ax.axvline(
+                self.length_limit,
+                color="red",
+                label=f"Declared limit: {self.length_limit}",
+            )
+            len_ax.legend()
+        else:
+            len_ax.axis("off")
 
 
 class ABTest(Analysis):
@@ -548,12 +603,15 @@ def main(output_file: Optional[str], debug: bool, open_report: bool, html: bool)
             mem_bound = function_record["tests"].get("mem_bound", None)
             time_limit = function_record["tests"].get("time_limit", None)
             mem_limit = function_record["tests"].get("mem_limit", None)
+            length_limit = function_record["tests"].get("length_limit", None)
             ab_test = function_record["tests"].get("abtest", None)
             if time_bound or mem_bound:
                 work_items += [CheckBounds(function_data, time_bound, mem_bound)]
                 used_in_tests.add(key)
             if time_limit or mem_limit:
-                work_items += [CheckLimits(function_data, time_limit, mem_limit)]
+                work_items += [
+                    CheckLimits(function_data, time_limit, mem_limit, length_limit)
+                ]
             elif ab_test:
                 alt, metrics = ab_test
                 if "time" in metrics:
@@ -596,10 +654,10 @@ def run_pdf(work_items) -> str:
             print(textwrap.indent("\n".join(["Warnings:"] + result.warnings), "  "))
             print()
         item.plot(subfig)
-        if result.success:
-            subfig.suptitle(f"{item.title()}")
-        else:
-            subfig.suptitle(f"FAILED -- {item.title()}", color="red")
+        # if result.success:
+        subfig.suptitle(f"{item.title()}: {'success' if result.success else 'failed'}")
+        # else:
+        #     subfig.suptitle(f"FAILED -- {item.title()}", color="red")
 
     filename = f"{system_name}.pdf"
     plt.savefig(filename)

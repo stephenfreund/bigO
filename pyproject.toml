@@ -43,7 +43,7 @@ dependencies = [
 "Repository" = "https://github.com/plasma-umass/bigO"
 
 [project.scripts]
-bigo-report = "bigO.report:main"
+bigO = "bigO.__main__:main"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

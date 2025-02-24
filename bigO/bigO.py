@@ -12,7 +12,7 @@ from typing import Any, Callable, List, Literal, TypedDict
 
 import numpy as np
 
-from bigO.report import CheckBounds, CheckLimits, FunctionData, Result
+from bigO.analysis import CheckBounds, CheckLimits, FunctionData, Result
 
 system_name = "bigO"
 

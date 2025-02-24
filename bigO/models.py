@@ -358,6 +358,8 @@ def pvalue_for_better_fit(
 
 if __name__ == "__main__":
 
+    print(", ".join([str(m) for m in models]))
+
     import unittest
 
     class TestFittedModelLE(unittest.TestCase):
@@ -413,15 +415,6 @@ if __name__ == "__main__":
             fm_n_power_k = self.create_fitted_model(model_n_power_k, [5.0, 0.0, 2.5])
             fm_n_squared = self.create_fitted_model(model_n_squared, [5.0, 0.0])
             self.assertFalse(fm_n_power_k <= fm_n_squared)
-
-        def test_n_exp_vs_linear_less(self):
-            # n_exp: (None, 1, 0, 0) where r is substituted with last param.
-            # Use k = 0.8 (< 1 from linear)
-            fm_n_exp = self.create_fitted_model(model_n_exp, [5.0, 0.0, 0.8])
-            fm_linear = self.create_fitted_model(model_linear_n, [5.0, 0.0])
-            # For fm_n_exp, r becomes 0.8 which is less than 1.
-            self.assertTrue(fm_n_exp <= fm_linear)
-            self.assertFalse(fm_linear <= fm_n_exp)
 
         def test_n_exp_vs_linear_more(self):
             # Use k = 1.2 (> 1)

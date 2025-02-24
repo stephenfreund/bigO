@@ -1,7 +1,8 @@
 import random
 
 import numpy as np
-from bigO.bigO import bounds, track
+
+from bigO.bigO import bounds
 
 
 def suffix_arr_fast(s):
@@ -305,6 +306,8 @@ def suffix_arr_slow(s: str):
     if n == 0:
         return []
 
+    r = range(1, n)
+
     # Convert string to array of integers (rank), each in [0..255] typically
     # or use a dictionary if you have larger alphabets.
     # For convenience here, let's just use the ASCII code:
@@ -326,39 +329,104 @@ def suffix_arr_slow(s: str):
         # This ensures we compare the second half as well.
         key = lambda i: (ranks[i], ranks[i + k] if i + k < n else -1)
 
-        # Sort suffix array by the 2-part key: O(n log n) sort each iteration
-        sa.sort(key=key)
+        # # Sort suffix array by the 2-part key using inlined mergesort
+        # def merge_sort(arr, key):
+        #     if len(arr) > 1:
+        #         mid = len(arr) // 2
+        #         left_half = arr[:mid]
+        #         right_half = arr[mid:]
 
-        # Recompute the temporary ranks after sorting
-        temp[sa[0]] = 0  # First suffix in sorted order gets rank 0
-        for i in range(1, n):
-            temp[sa[i]] = temp[sa[i - 1]]
-            if key(sa[i]) > key(sa[i - 1]):
-                temp[sa[i]] += 1
+        #         merge_sort(left_half, key)
+        #         merge_sort(right_half, key)
 
-        # Update ranks from temp
-        ranks = temp[:]
+        #         i = j = k = 0
 
-        # If at any point the largest rank equals n-1, we are fully sorted
-        if ranks[sa[-1]] == n - 1:
-            break
+        #         while i < len(left_half) and j < len(right_half):
+        #             if key(left_half[i]) <= key(right_half[j]):
+        #                 arr[k] = left_half[i]
+        #                 i += 1
+        #             else:
+        #                 arr[k] = right_half[j]
+        #                 j += 1
+        #                 k += 1
+
+        #         while i < len(left_half):
+        #             arr[k] = left_half[i]
+        #             i += 1
+        #             k += 1
+
+        #         while j < len(right_half):
+        #             arr[k] = right_half[j]
+        #             j += 1
+        #             k += 1
+
+        # merge_sort(sa, key)
+
+        sa = sorted(sa, key=key)
+
+        # # Recompute the temporary ranks after sorting
+        # temp[sa[0]] = 0  # First suffix in sorted order gets rank 0
+        # for i in r:
+        #     temp[sa[i]] = temp[sa[i - 1]]
+        #     if key(sa[i]) > key(sa[i - 1]):
+        #         temp[sa[i]] += 1
+
+        # # Update ranks from temp
+        # ranks = temp[:]
+
+        # # If at any point the largest rank equals n-1, we are fully sorted
+        # if ranks[sa[-1]] == n - 1:
+        #     print("BREAK")
+        #     break
 
         # Double the offset
-        k <<= 1
+        # k <<= 1
+        k = n
 
     return sa
 
 
 def random_string(length: int) -> str:
     return "".join(
-        random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ")
+        random.choice(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890!@#$%^&*()[]{},.<>/?`~"
+        )
         for _ in range(length)
     )
 
 
 if __name__ == "__main__":
-    for _ in range(50):
-        n = np.random.randint(0, 1000)
-        word = random_string(int(n))
-        suffix_arr_slow(word)
+    # word = random_string(1000000)
+    for _ in range(100):
+        # print("Beep")
+        n = np.random.randint(0, 1024 * 32 * 16)
+        # for n in [
+        #     2,
+        #     4,
+        #     8,
+        #     16,
+        #     32,
+        #     64,
+        #     128,
+        #     256,
+        #     512,
+        #     1024,
+        #     2048,
+        #     4096,
+        #     8192,
+        #     16384,
+        #     32768,
+        #     65536,
+        #     131072,
+        #     262144,
+        #     524288,
+        #     1048576,
+        # ]:
+        print("Beep", n)
+        # for n in [
+        #     2097152,
+        #     4194304,
+        #     8388608,
+        # ]:
+        suffix_arr_slow("a" * n)
         # assert suffix_arr_fast(word) == suffix_arr_slow(word), f"Mismatch for {word}"

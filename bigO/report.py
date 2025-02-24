@@ -36,6 +36,7 @@ class FunctionData:
 class Result:
     success: bool
     message: str
+    details: str
     warnings: List[str]
 
 
@@ -75,7 +76,8 @@ class InferPerformance(Analysis):
         best_mem_model = self.fitted_mems.models[0] if self.fitted_mems.models else None
         return Result(
             success=True,
-            message=(
+            message=(f"Time is {best_time_model}.  Memory is: {best_mem_model}."),
+            details=(
                 f"Inferred Bounds for {self.function_data.function_name}\n"
                 f"Best time model: {best_time_model}\nBest memory model: {best_mem_model}"
             ),
@@ -100,18 +102,6 @@ class InferPerformance(Analysis):
             linewidth=2,
             label=f"Best fit: {best_fit}",
         )
-        # styles = ["-", "--", "-.", ":"]
-        # for i, model in enumerate(models[0:4]):
-        #     sns.lineplot(
-        #         x=model.n,
-        #         y=model.predict(model.n),
-        #         ax=ax,
-        #         label=f"{model}",
-        #         color=color,
-        #         linewidth=2 if i == 0 else 1,
-        #         linestyle=styles[i],
-        #         alpha=(1 - i * 0.2),
-        #     )
 
         ax.set_xlabel("Input Size (n)")
         ax.set_ylabel(ylabel)
@@ -153,11 +143,7 @@ class CheckBounds(Analysis):
         self.mem_bound = models.get_model(mem_bound) if mem_bound else None
 
     def title(self) -> str:
-        return (
-            f"Check bounds for {self.function_data.function_name}."
-            # + (f" Time: {self.time_bound}." if self.time_bound else "")
-            # + (f" Mem: {self.mem_bound}." if self.mem_bound else "")
-        )
+        return f"Check bounds for {self.function_data.function_name}."
 
     def run(self) -> Result:
         with timer(self.title()):
@@ -181,17 +167,24 @@ class CheckBounds(Analysis):
                 self.mem_check = None
 
         success = True
+        details = []
         message = []
         if self.time_check and len(self.time_check.better_models) > 0:
             success = success and len(self.time_check.better_models) == 0
             message += [
+                f"Time bound is supposed to be {self.time_bound} but is actually {self.time_check.better_models['model'].iloc[0]}.",
+            ]
+            details += [
                 f"Declared Time Bound for {self.function_data.function_name} is {self.time_bound}, ",
                 f"but these models with worse performance better fit the data: ",
                 str(self.time_check.better_models.to_string(index=False)),
             ]
         if self.mem_check and len(self.mem_check.better_models) > 0:
             success = success and len(self.mem_check.better_models) == 0
-            message += [
+            message = [
+                f"Memory bound is supposed to be {self.mem_bound} but is actually {self.mem_check.better_models['model'].iloc[0]}.",
+            ]
+            details += [
                 f"Declared Memory Bound for {self.function_data.function_name}: {self.mem_bound}, ",
                 f"but these models with worse performance better fit the data: ",
                 str(
@@ -203,7 +196,12 @@ class CheckBounds(Analysis):
         warnings = (self.time_check.warnings if self.time_check else []) + (
             self.mem_check.warnings if self.mem_check else []
         )
-        return Result(success=success, message="\n".join(message), warnings=warnings)
+        return Result(
+            success=success,
+            message="\n".join(message),
+            details="\n".join(details),
+            warnings=warnings,
+        )
 
     def plot_fits(
         self, ax, check_result: models.CheckBoundResult, color, ylabel, title
@@ -224,17 +222,22 @@ class CheckBounds(Analysis):
             color=color,
             label=f"Declared: {declared_fit}",
         )
-        best_fit = check_result.better_models.iloc[0]
-        best_model = best_fit["model"]
-        pvalue = best_fit["pvalue"]
-        sns.lineplot(
-            x=best_model.n,
-            y=best_model.predict(best_model.n),
-            ax=ax,
-            color="red",
-            label=f"Best fit: {best_model} (p={pvalue:.3f})",
-            linewidth=2,
+        best_fit = (
+            check_result.better_models.iloc[0]
+            if len(check_result.better_models) > 0
+            else None
         )
+        if best_fit is not None:
+            best_model = best_fit["model"]
+            pvalue = best_fit["pvalue"]
+            sns.lineplot(
+                x=best_model.n,
+                y=best_model.predict(best_model.n),
+                ax=ax,
+                color="red",
+                label=f"Best fit: {best_model} (p={pvalue:.3f})",
+                linewidth=2,
+            )
 
         # for i, (_, row) in enumerate(check_result.better_models.iterrows()):
         #     if i < 4:
@@ -297,43 +300,57 @@ class CheckLimits(Analysis):
         self.length_limit = length_limit
 
     def title(self) -> str:
-        return (
-            f"Check limits for {self.function_data.function_name}. "
-            # + (f"Time: {self.time_limit}." if self.time_limit else "")
-            # + (f"Mem: {self.mem_limit}." if self.mem_limit else "")
-            # + (f"Length: {self.length_limit}." if self.length_limit else "")
-        )
+        return f"Check limits for {self.function_data.function_name}. "
 
     def run(self) -> Result:
 
         with timer(self.title()):
             success = True
             message = []
+            details = []
+            max_time = None
+            max_mem = None
+            max_length = None
             if self.time_limit:
-                if not (self.function_data.times.max() < self.time_limit):
+                max_time = self.function_data.times.max()
+                if max_time > self.time_limit:
                     message += [
+                        f"Time of {max_time} exceeds limit of {self.time_limit}."
+                    ]
+                    details += [
                         f"Declared time limit for {self.function_data.function_name} is {self.time_limit}, ",
-                        f"but the largest observed time is {self.function_data.times.max()}.",
+                        f"but the largest observed time is {max_time}.",
                     ]
                     success = False
             if self.mem_limit:
-                if not (self.function_data.mems.max() < self.mem_limit):
+                max_mem = self.function_data.mems.max()
+                if max_mem > self.mem_limit:
                     message += [
+                        f"Memory of {max_mem} exceeds limit of {self.mem_limit}."
+                    ]
+                    details += [
                         f"Declared memory limit for {self.function_data.function_name} is {self.mem_limit}, ",
-                        f"but the largest observed memory is {self.function_data.mems.max()}.",
+                        f"but the largest observed memory is {max_mem}.",
                     ]
                     success = False
             if self.length_limit:
-                if not (self.function_data.lengths.max() < self.length_limit):
+                max_length = self.function_data.lengths.max()
+                if max_length > self.length_limit:
                     message += [
+                        f"Length of {max_length} exceeds limit of {self.length_limit}."
+                    ]
+                    details += [
                         f"Declared length limit for {self.function_data.function_name} is {self.length_limit}, ",
-                        f"but the largest observed length is {self.function_data.lengths.max()}.",
+                        f"but the largest observed length is {max_length}.",
                     ]
                     success = False
 
             warnings = []
             return Result(
-                success=success, message="\n".join(message), warnings=warnings
+                success=success,
+                message="\n".join(message),
+                details="\n".join(details),
+                warnings=warnings,
             )
 
     def plot(self, fig: Figure | SubFigure | None = None):
@@ -400,6 +417,50 @@ class ABTest(Analysis):
     def title(self) -> str:
         return f"AB Test: {self.a.function_name} vs. {self.b.function_name}"
 
+    def _summary(self) -> str:
+        # Bonferroni correction for multiple comparisons
+        num = len(self.ab_results.segments)
+        significant = all(
+            [report.p_value < 0.05 / num for report in self.ab_results.segments]
+        )
+        if not significant:
+            adjusted = [
+                min(1.0, float(report.p_value * num))
+                for report in self.ab_results.segments
+            ]
+            adjusted_str = ", ".join([f"{p:.3f}" for p in adjusted])
+            return f"Comparison is not statistically significant for al segments.  Adjusted p-values: {adjusted_str}."
+
+        # if A is always faster:
+        if all([report.faster == "A" for report in self.ab_results.segments]):
+            return (
+                f"{self.a.function_name} is always faster than {self.b.function_name}."
+            )
+        # if B is always faster:
+        if all([report.faster == "B" for report in self.ab_results.segments]):
+            return (
+                f"{self.b.function_name} is always faster than {self.a.function_name}."
+            )
+
+        for i in range(len(self.ab_results.segments)):
+            # if all segments < i are A and all segments >= i is B:
+            if all(
+                [report.faster == "A" for report in self.ab_results.segments[:i]]
+            ) and all(
+                [report.faster == "B" for report in self.ab_results.segments[i:]]
+            ):
+                return f"{self.a.function_name} is faster than {self.b.function_name} up to {self.ab_results.segments[i].n_common.min()}."
+            if all(
+                [report.faster == "B" for report in self.ab_results.segments[:i]]
+            ) and all(
+                [report.faster == "A" for report in self.ab_results.segments[i:]]
+            ):
+                return f"{self.b.function_name} is faster than {self.a.function_name} up to {self.ab_results.segments[i].n_common.min()}."
+
+        return (
+            f"{self.a.function_name} and {self.b.function_name} have mixed performance."
+        )
+
     def run(self):
         with timer(self.title()):
             combined_labels = np.concatenate(
@@ -425,13 +486,17 @@ class ABTest(Analysis):
                 num_points=100,
             )
 
-        message = [
+        details = [
             f"AB Test for {self.metric}: A is {self.a.function_name}; B is {self.b.function_name}"
         ]
         for report in self.ab_results.segments:
-            message += [f"  {x}" for x in str(report).splitlines()]
+            details += [f"  {x}" for x in str(report).splitlines()]
+
         return Result(
-            success=True, message="\n".join(message), warnings=self.ab_results.warnings
+            success=True,
+            message=self._summary(),
+            details="\n".join(details),
+            warnings=self.ab_results.warnings,
         )
 
     def plot(self, fig: Figure | SubFigure | None = None):
@@ -599,6 +664,8 @@ def main(output_file: Optional[str], debug: bool, open_report: bool, html: bool)
         used_in_tests = set()
         for key, function_record in data.items():
             function_data = entries[key]
+            if len(function_data.lengths) == 0:
+                continue
             time_bound = function_record["tests"].get("time_bound", None)
             mem_bound = function_record["tests"].get("mem_bound", None)
             time_limit = function_record["tests"].get("time_limit", None)
@@ -624,7 +691,7 @@ def main(output_file: Optional[str], debug: bool, open_report: bool, html: bool)
         for key, function_record in data.items():
             if key not in used_in_tests:
                 function_data = entries[key]
-                if all(function_data.lengths >= 0):
+                if len(function_data.lengths) > 0 and all(function_data.lengths >= 0):
                     work_items += [InferPerformance(function_data)]
 
     if html:
@@ -647,17 +714,24 @@ def run_pdf(work_items) -> str:
         print(item.title())
         print("-" * len(item.title()))
         subfig = fig.add_subfigure(gs_main[index, 0])
-        result = item.run()
-        print(textwrap.indent(result.message, "  "))
-        print("")
-        if result.warnings:
-            print(textwrap.indent("\n".join(["Warnings:"] + result.warnings), "  "))
+        try:
+            result = item.run()
+            print(textwrap.indent(result.message, "  "))
             print()
-        item.plot(subfig)
-        # if result.success:
-        subfig.suptitle(f"{item.title()}: {'success' if result.success else 'failed'}")
-        # else:
-        #     subfig.suptitle(f"FAILED -- {item.title()}", color="red")
+            print("  Details:")
+            print(textwrap.indent(result.details, "  "))
+            print()
+            if result.warnings:
+                print(textwrap.indent("\n".join(["Warnings:"] + result.warnings), "  "))
+                print()
+            item.plot(subfig)
+            subfig.suptitle(
+                f"{item.title()}: {'success' if result.success else 'failed'}"
+            )
+        except Exception as e:
+            print(f"Failed: {e}")
+            print()
+            subfig.suptitle(f"{item.title()}: {'exception'}")
 
     filename = f"{system_name}.pdf"
     plt.savefig(filename)
@@ -690,48 +764,53 @@ def run_html(work_items) -> str:
     for item in work_items:
         title = item.title()
         print(f"{title}...")
-        result = item.run()
-        mark = (
-            "<span style='color:blue;'>&#10003;</span>"
-            if result.success
-            else "<span style='color:red;'>&#10007;</span>"
-        )
-        html_lines.append(f"<h2>{mark} {title}</h2>")
+        try:
+            result = item.run()
+            mark = (
+                "<span style='color:blue;'>&#10003;</span>"
+                if result.success
+                else "<span style='color:red;'>&#10007;</span>"
+            )
+            html_lines.append(f"<h2>{mark} {title}</h2>")
 
-        # Create a new figure and axis for this work item.
-        fig_item = Figure(figsize=(12, 4))
+            # Create a new figure and axis for this work item.
+            fig_item = Figure(figsize=(12, 4))
 
-        # Run the work item and capture its result.
-        result = item.run()
-
-        # Add the result message.
-        html_lines.append("<pre>")
-        html_lines.append(textwrap.indent(result.message, "  "))
-        html_lines.append("</pre>")
-
-        # Let the work item create its plot on the current axis.
-        item.plot(fig_item)
-
-        # Save the figure as a PNG image into a bytes buffer.
-        buf = io.BytesIO()
-        fig_item.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        image_base64 = base64.b64encode(buf.read()).decode("utf-8")
-
-        # Embed the PNG image (as a Base64 data URL) in the HTML.
-        html_lines.append(
-            f'<img src="data:image/png;base64,{image_base64}" alt="Plot for {title}">'
-        )
-
-        # Close the figure to free memory.
-        plt.close(fig_item)
-
-        # If there are warnings, include them.
-        if result.warnings:
-            warnings_text = "\n".join(["Warnings:"] + result.warnings)
+            # Add the result message.
             html_lines.append("<pre>")
-            html_lines.append(textwrap.indent(warnings_text, "  "))
+            html_lines.append(textwrap.indent(result.message, "  "))
             html_lines.append("</pre>")
+            html_lines.append("<pre>")
+            html_lines.append("Details:")
+            print(textwrap.indent(result.details, "  "))
+            html_lines.append("</pre>")
+
+            # Let the work item create its plot on the current axis.
+            item.plot(fig_item)
+
+            # Save the figure as a PNG image into a bytes buffer.
+            buf = io.BytesIO()
+            fig_item.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+
+            # Embed the PNG image (as a Base64 data URL) in the HTML.
+            html_lines.append(
+                f'<img src="data:image/png;base64,{image_base64}" alt="Plot for {title}">'
+            )
+
+            # Close the figure to free memory.
+            plt.close(fig_item)
+
+            # If there are warnings, include them.
+            if result.warnings:
+                warnings_text = "\n".join(["Warnings:"] + result.warnings)
+                html_lines.append("<pre>")
+                html_lines.append(textwrap.indent(warnings_text, "  "))
+                html_lines.append("</pre>")
+        except Exception as e:
+            print(f"Failed: {e}")
+            html_lines.append(f"<pre>Failed: {e}</pre>")
 
     html_lines.append("</body>")
     html_lines.append("</html>")

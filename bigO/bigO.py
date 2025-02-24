@@ -8,17 +8,29 @@ import marshal
 
 from collections import defaultdict
 from functools import wraps
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Callable, List, Literal, TypedDict
 
 import numpy as np
 
-from bigO.report import CheckBounds, CheckLimits, FunctionData
+from bigO.report import CheckBounds, CheckLimits, FunctionData, Result
 
 system_name = "bigO"
 
 
-class BigOError(ValueError):
-    pass
+class BigOError(Exception):
+    """
+    Exceptions triggered by performance checks failing against the specified bounds or limits.
+    Message is a short explanation.
+    Explanation is a longer explanation of the error.
+    """
+
+    def __init__(self, message, explanation):
+        super().__init__(message)
+        self.message = message
+        self.explanation = explanation
+
+    def __str__(self):
+        return self.message
 
 
 class RuntimeData(TypedDict):
@@ -201,6 +213,22 @@ def track(length_function: Callable[..., int]) -> Callable:
     return decorator
 
 
+def _raise_on_failure(results: List[Result]) -> None:
+    """
+    Raise an exception if any of the results indicate a failure.
+    The exception should have all the failed messages and details.
+    """
+    messages = []
+    explanations = []
+    for result in results:
+        if not result.success:
+            messages.append(result.message)
+            explanations.append(result.details)
+
+    if messages:
+        raise BigOError("\n".join(messages), "\n".join(explanations))
+
+
 def bounds(
     length_function: Callable[..., int],
     time: str | None = None,
@@ -255,7 +283,7 @@ def bounds(
 
                 count = len(_performance_data[full_name]["observations"])
                 if count > 0 and count % interval == 0:  # type: ignore
-                    check(func)
+                    _raise_on_failure(check(func))
 
                 return result
 
@@ -325,7 +353,7 @@ def limits(
 
                 count = len(_performance_data[full_name]["observations"])
                 if count > 0 and count % interval == 0:  # type: ignore
-                    check(func)
+                    _raise_on_failure(check(func))
 
                 return result
 
@@ -334,7 +362,7 @@ def limits(
     return decorator
 
 
-def check(func: Callable) -> None:
+def check(func: Callable) -> List[Result]:
     """
     Programmatically run the checks for a given function.
     Generates an exception if the function does not pass its bounds or limits checks.
@@ -342,6 +370,7 @@ def check(func: Callable) -> None:
     full_name = _function_full_name(func)
     tests = _performance_data[full_name]["tests"]
     function_data = _gather_function_data(func)
+    results = []
 
     if "length_limit" in tests:
         check = CheckLimits(
@@ -351,19 +380,14 @@ def check(func: Callable) -> None:
             tests.get("length_limit", None),
         )
         result = check.run()
-        if not result.success:
-            raise BigOError(result.message)
-    elif "mem_bound" in tests or "time_bound" in tests:
+        results += [result]
+    if "mem_bound" in tests or "time_bound" in tests:
         check = CheckBounds(
             function_data, tests.get("time_bound", None), tests.get("mem_bound", None)
         )
         result = check.run()
-        if not result.success:
-            raise BigOError(result.message)
-    else:
-        raise BigOError(
-            f"Function {full_name} has no tests defined. Use the @limit or @check decorator."
-        )
+        results += [result]
+    return results
 
 
 def ab_test(

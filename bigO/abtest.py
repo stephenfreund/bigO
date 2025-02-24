@@ -546,7 +546,7 @@ def segmented_permutation_test(
         crossover_n = [
             n
             for n, _ in detect_dynamic_threshold_crossings(
-                n_common, T_A_interp, T_B_interp, 0.1
+                n_common, T_A_interp, T_B_interp, 0.05
             )
         ]
         # crossover_n = detect_crossover_points(n_common, T_A_interp, T_B_interp)

@@ -100,23 +100,46 @@ The `quick_sort` function is annotated to indicate the `bigO` should
 compare the time and memory of that function to `insertion_sort`.  At run time,
 `bigO` will randomly select which of the two functions to run on each call to `quick_sort`.
 
-Running
+After running the program,
+
 ```bash
 python3 -m bigO
 ```
 
-then compares the running times across the input size range, identifying segments where one 
+compares the running times across the input size range, identifying segments where one 
 function performs statistically significantly better than the other, as in the following,
-which shows smoothed performance curves, as well as the results of a permutate test for the
-statistical significance of the performance difference in each segment.
+which shows smoothed performance curves, shaded regions where one function is better than the other, as
+well as the p-values for each segment's statistical test.
 
-![abtest](https://github.com/user-attachments/assets/575a6f58-80de-455b-af41-da0b9f36b19b)
+![abtest](https://github.com/user-attachments/assets/823a26cf-2bc5-4958-a47a-c6f9a253ce33)
 
 #### Verifying Hard Limits on Time, Space, and Input Size
 
+`bigO` also lets you verify at run time that function calls do not exceed hard limits on
+time, memory, or input size.  The file `test/test_limits_insertion_sort.py` demonstrates
+this:
+
+```python
+@limits(len, 
+        time=0.1, 
+        mem=1_000_000, 
+        length=1800)
+def insertion_sort(arr: np.ndarray) -> np.ndarray:
+    ...
+```
+
+After running that program
+
+```bash
+python3 -m bigO
+```
+
+produces the following plots, showing the histograms of those metrics, as well as the
+specified limits.
 
 ![limits](https://github.com/user-attachments/assets/6009c9a5-0e3e-449f-9a2d-88bc47ac462c)
 
+You can also specify only one or two of the limits instead of all three.
 
 ### Technical Details
 

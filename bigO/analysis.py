@@ -1,5 +1,6 @@
 import abc
 from dataclasses import dataclass
+from tkinter import font
 from typing import List
 
 from matplotlib import pyplot as plt
@@ -11,7 +12,6 @@ import bigO.models as models
 from bigO.output import timer
 import numpy as np
 import seaborn as sns
-
 
 
 @dataclass
@@ -230,19 +230,6 @@ class CheckBounds(Analysis):
                 linewidth=2,
             )
 
-        # for i, (_, row) in enumerate(check_result.better_models.iterrows()):
-        #     if i < 4:
-        #         (model, pvalue) = row["model"], row["pvalue"]
-        #         sns.lineplot(
-        #             x=model.n,
-        #             y=model.predict(model.n),
-        #             ax=ax,
-        #             label=f"{model} (p={pvalue:.3f})",
-        #             color="red",
-        #             linewidth=2 if i == 0 else 1,
-        #             alpha=(1 - i * 0.2),
-        #         )
-
         ax.set_xlabel("Input Size (n)")
         ax.set_ylabel(ylabel)
 
@@ -420,7 +407,7 @@ class ABTest(Analysis):
                 for report in self.ab_results.segments
             ]
             adjusted_str = ", ".join([f"{p:.3f}" for p in adjusted])
-            return f"Comparison is not statistically significant for al segments.  Adjusted p-values: {adjusted_str}."
+            return f"Comparison is not statistically significant for all segments.  Adjusted p-values: {adjusted_str}."
 
         # if A is always faster:
         if all([report.faster == "A" for report in self.ab_results.segments]):
@@ -494,8 +481,10 @@ class ABTest(Analysis):
         if fig is None:
             fig = plt.figure(constrained_layout=True, figsize=(12, 4))
 
-        num_figs = min(1 + len(self.ab_results.segments), 4)
-        axes = fig.subplots(1, num_figs)
+        # num_figs = min(1 + len(self.ab_results.segments), 4)
+        axes = fig.subplots(1, 3)
+        axes[1].axis("off")
+        axes[2].axis("off")
 
         # ----------------------------------------
         # 4.1. Scatter Plots with Curves (First Visualization)
@@ -547,6 +536,37 @@ class ABTest(Analysis):
                     linestyle="--",
                     linewidth=1,
                 )
+                
+            if index == 0:
+                x_min = 0
+            else:
+                x_min = result.n_common.min()    
+            
+            if index == len(self.ab_results.segments) - 1:
+                x_max = result.n_common.max()
+            else:
+                x_max = self.ab_results.segments[index + 1].n_common.min()
+
+            if result.p_value < 0.05:
+                axes[0].axvspan(
+                    x_min,
+                    x_max,
+                    color="C0" if result.faster == "A" else "C1",
+                    alpha=0.1,
+                )
+
+            # show the pvalue as text at the centered at midpoint near the top
+            x_text = (x_min + x_max) / 2
+            y_text = 0.9 * axes[0].get_ylim()[1]
+            axes[0].text(
+                x_text,
+                y_text,
+                f"p={result.p_value:.3f}",
+                horizontalalignment="center",
+                verticalalignment="center",
+                fontsize=10,
+                color="black",
+            )
 
         axes[0].set_xlabel("Input Size (n)")
         axes[0].set_ylabel(f"{self.metric.title()} (T)")
@@ -556,40 +576,38 @@ class ABTest(Analysis):
         axes[0].legend()
         axes[0].grid(True)
 
-        # ----------------------------------------
-        # 4.2. Difference in Running Times and Permutation Test by Segment
-        # ----------------------------------------
+        # # ----------------------------------------
+        # # 4.2. Difference in Running Times and Permutation Test by Segment
+        # # ----------------------------------------
 
-        for segment_number, result in enumerate(self.ab_results.segments[-3:]):
-            index = segment_number
+        # for segment_number, result in enumerate(self.ab_results.segments[-3:]):
+        #     index = segment_number
 
-            valid_perm_stats = result.perm_stats[np.isfinite(result.perm_stats)]
+        #     valid_perm_stats = result.perm_stats[np.isfinite(result.perm_stats)]
 
-            # Histogram of the permutation test distribution
-            sns.histplot(
-                valid_perm_stats,
-                stat="percent",
-                bins=50,
-                color="C7",
-                alpha=0.8,
-                label="Permutation Distribution",
-                ax=axes[index + 1],
-            )
+        #     # Histogram of the permutation test distribution
+        #     sns.histplot(
+        #         valid_perm_stats,
+        #         stat="percent",
+        #         bins=50,
+        #         color="C7",
+        #         alpha=0.8,
+        #         label="Permutation Distribution",
+        #         ax=axes[index + 1],
+        #     )
 
-            axes[index + 1].axvline(
-                result.observed_stat,
-                color="red",
-                linestyle="--",
-                linewidth=2,
-                label="Observed Statistic",
-            )
+        #     axes[index + 1].axvline(
+        #         result.observed_stat,
+        #         color="red",
+        #         linestyle="--",
+        #         linewidth=2,
+        #         label="Observed Statistic",
+        #     )
 
-            axes[index + 1].set_xlabel("Signed Area Between Smoothed Curves")
-            axes[index + 1].set_ylabel("Frequency")
-            axes[index + 1].set_title(
-                f"{result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is better (p-value={result.p_value:.3f})"
-            )
-            axes[index + 1].legend()
-            axes[index + 1].grid(True)
-
-
+        #     axes[index + 1].set_xlabel("Signed Area Between Smoothed Curves")
+        #     axes[index + 1].set_ylabel("Frequency")
+        #     axes[index + 1].set_title(
+        #         f"{result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is better (p-value={result.p_value:.3f})"
+        #     )
+        #     axes[index + 1].legend()
+        #     axes[index + 1].grid(True)

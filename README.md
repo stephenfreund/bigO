@@ -156,8 +156,8 @@ tracking memory allocations during function execution.
 In addition, `bigO` uses a more general curve fitting approach that can handle
 complexity classes that do not follow the power law, and it uses
 the [AIC](https://en.wikipedia.org/wiki/Akaike_information_criterion) to
-select the best model.  Further, `bigO` measures the statistical significance of its bounds inference
-processes via pvalues computed by the technique outlined in [An Empirical Investigation of Statistical Significance in NLP"](https://aclanthology.org/D12-1091.pdf) by Berg-Kirkpatrick, Burkett, and Klein, Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural 2012.
+select the best model.  Further, `bigO` measures the statistical significance of its complexity inference
+results via p-values computed by the technique outlined in [An Empirical Investigation of Statistical Significance in NLP"](https://aclanthology.org/D12-1091.pdf) by Berg-Kirkpatrick, Burkett, and Klein, Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural 2012.
 
 For A/B testing, `bigO` smooths the performance curves for the two functions, segments the input range by approximating crossover points for those curves, and then performs a standard permutation test to determine whether the different in performance between the function across that range is statistically significant. The test statistic is the area between the two curves, as approximated by numerical integration via the trapezoid rule.
 

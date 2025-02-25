@@ -1,6 +1,6 @@
-from os import error
 import time
 import tracemalloc
+from typing import Callable
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -8,17 +8,15 @@ from functools import wraps
 
 from bigO.models import (
     Model,
-    better_fit_pvalue_vectorized,
     fit_model,
     fit_models,
     get_model,
-    leq,
     remove_outliers,
 )
 
 
 def error_plot(func_name, bound_type, n, y, bound_model_fit, best_fit, pvalue):
-    fig, ax = plt.subplots(figsize=(6, 4))
+    _, ax = plt.subplots(figsize=(6, 4))
 
     ax.plot(n, y, "o", color="blue", label="Data (outliers removed)")
     fit_n = np.sort(n)
@@ -50,12 +48,11 @@ def error_plot(func_name, bound_type, n, y, bound_model_fit, best_fit, pvalue):
 
 
 def check(
-    length_computation: callable,
+    length_computation: Callable,
     time_bound: str | None = None,
     mem_bound: str | None = None,
     frequency: int = 25,
 ):
-
     def decorator(func):
 
         func_name = func.__name__
@@ -76,7 +73,7 @@ def check(
             bound_model_fit, _ = fit_model(lengths, y, bound_model)
             if fits:
                 best_fit, _ = fits[0]
-                if not leq(best_fit, bound_model_fit):
+                if not (best_fit <= bound_model_fit):
                     pvalue = better_fit_pvalue_vectorized(
                         lengths, y, bound_model_fit, best_fit
                     )
@@ -121,9 +118,7 @@ def check(
                 }
                 performance_data.append(new_entry)
 
-                if (len(performance_data) > 0
-                    and len(performance_data) % frequency == 0
-                ):
+                if len(performance_data) > 0 and len(performance_data) % frequency == 0:
                     if time_model:
                         check_bound("time", time_model)
                     if mem_model:

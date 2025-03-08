@@ -1,6 +1,6 @@
 [project]
 name = "bigO"
-version = "0.0.1"
+version = "0.0.4"
 description = "Track asymptotic complexity in time and space."
 readme = "README.md"
 keywords = ["performance", "profiler"]
@@ -43,7 +43,7 @@ dependencies = [
 "Repository" = "https://github.com/plasma-umass/bigO"
 
 [project.scripts]
-bigO = "bigO.__main__:main"
+# bigO = "bigO.__main__:main"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

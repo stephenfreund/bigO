@@ -243,29 +243,32 @@ def get_model(name: str) -> Model | None:
 
 
 def fit_model(n, y, model) -> Tuple[FittedModel | None, List[str]]:
-    with warnings.catch_warnings(record=True) as w:
-        # Attempt to fit
-        (params, _) = curve_fit(
-            model.func,
-            n,
-            y,
-            p0=[1.0] * model.param_count,
-            maxfev=10000,
-            full_output=False,
-        )
+    try:
+        with warnings.catch_warnings(record=True) as w:
+            # Attempt to fit
+            (params, _) = curve_fit(
+                model.func,
+                n,
+                y,
+                p0=[1.0] * model.param_count,
+                maxfev=10000,
+                full_output=False,
+            )
 
-        # If any relevant warning occurred, return None
-        if w:
-            messages = [f"fit_model {model.name}: {wm.message}" for wm in w]
-            reported = []
-            for message in messages:
-                if message not in reported:
-                    reported += [message]
-            return None, reported
+            # If any relevant warning occurred, return None
+            if w:
+                messages = [f"fit_model {model.name}: {wm.message}" for wm in w]
+                reported = []
+                for message in messages:
+                    if message not in reported:
+                        reported += [message]
+                return None, reported
 
-    # Otherwise, build and return the FittedModel
-    fitted = FittedModel(model=model, params=params, n=n, y=y)
-    return fitted, []
+        # Otherwise, build and return the FittedModel
+        fitted = FittedModel(model=model, params=params, n=n, y=y)
+        return fitted, []
+    except Exception as e:
+        return None, [f"fit_model {model.name}: {str(e)}"]
 
 
 def fit_models(n, y) -> Tuple[List[FittedModel], List[str]]:

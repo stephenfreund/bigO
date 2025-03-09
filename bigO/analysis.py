@@ -396,48 +396,57 @@ class ABTest(Analysis):
         return f"AB Test: {self.a.function_name} vs. {self.b.function_name}"
 
     def _summary(self) -> str:
-        # Bonferroni correction for multiple comparisons
-        num = len(self.ab_results.segments)
-        significant = all(
-            [report.p_value < 0.05 / num for report in self.ab_results.segments]
-        )
-        if not significant:
-            adjusted = [
-                min(1.0, float(report.p_value * num))
-                for report in self.ab_results.segments
-            ]
-            adjusted_str = ", ".join([f"{p:.3f}" for p in adjusted])
-            return f"Comparison is not statistically significant for all segments.  Adjusted p-values: {adjusted_str}."
+        messages = []
+        for full_result in self.ab_results.segments:
+            result = full_result.result
+            if full_result.null_rejected:
+                messages += [
+                    f"{result.faster} is significantly faster for n={result.n_common.min()} to {result.n_common.max()}"
+                ]
+        return "\n".join(messages)
 
-        # if A is always faster:
-        if all([report.faster == "A" for report in self.ab_results.segments]):
-            return (
-                f"{self.a.function_name} is always faster than {self.b.function_name}."
-            )
-        # if B is always faster:
-        if all([report.faster == "B" for report in self.ab_results.segments]):
-            return (
-                f"{self.b.function_name} is always faster than {self.a.function_name}."
-            )
+        # # Bonferroni correction for multiple comparisons
+        # num = len(self.ab_results.segments)
+        # significant = all(
+        #     [report.p_value < 0.05 / num for report in self.ab_results.segments]
+        # )
+        # if not significant:
+        #     adjusted = [
+        #         min(1.0, float(report.p_value * num))
+        #         for report in self.ab_results.segments
+        #     ]
+        #     adjusted_str = ", ".join([f"{p:.3f}" for p in adjusted])
+        #     return f"Comparison is not statistically significant for all segments.  Adjusted p-values: {adjusted_str}."
 
-        for i in range(len(self.ab_results.segments)):
-            # if all segments < i are A and all segments >= i is B:
-            if all(
-                [report.faster == "A" for report in self.ab_results.segments[:i]]
-            ) and all(
-                [report.faster == "B" for report in self.ab_results.segments[i:]]
-            ):
-                return f"{self.a.function_name} is faster than {self.b.function_name} up to {self.ab_results.segments[i].n_common.min()}."
-            if all(
-                [report.faster == "B" for report in self.ab_results.segments[:i]]
-            ) and all(
-                [report.faster == "A" for report in self.ab_results.segments[i:]]
-            ):
-                return f"{self.b.function_name} is faster than {self.a.function_name} up to {self.ab_results.segments[i].n_common.min()}."
+        # # if A is always faster:
+        # if all([report.faster == "A" for report in self.ab_results.segments]):
+        #     return (
+        #         f"{self.a.function_name} is always faster than {self.b.function_name}."
+        #     )
+        # # if B is always faster:
+        # if all([report.faster == "B" for report in self.ab_results.segments]):
+        #     return (
+        #         f"{self.b.function_name} is always faster than {self.a.function_name}."
+        #     )
 
-        return (
-            f"{self.a.function_name} and {self.b.function_name} have mixed performance."
-        )
+        # for i in range(len(self.ab_results.segments)):
+        #     # if all segments < i are A and all segments >= i is B:
+        #     if all(
+        #         [report.faster == "A" for report in self.ab_results.segments[:i]]
+        #     ) and all(
+        #         [report.faster == "B" for report in self.ab_results.segments[i:]]
+        #     ):
+        #         return f"{self.a.function_name} is faster than {self.b.function_name} up to {self.ab_results.segments[i].n_common.min()}."
+        #     if all(
+        #         [report.faster == "B" for report in self.ab_results.segments[:i]]
+        #     ) and all(
+        #         [report.faster == "A" for report in self.ab_results.segments[i:]]
+        #     ):
+        #         return f"{self.b.function_name} is faster than {self.a.function_name} up to {self.ab_results.segments[i].n_common.min()}."
+
+        # return (
+        #     f"{self.a.function_name} and {self.b.function_name} have mixed performance."
+        # )
 
     def run(self):
         with timer(self.title()):
@@ -528,7 +537,8 @@ class ABTest(Analysis):
             ax=axes[0],
         )
 
-        for index, result in enumerate(self.ab_results.segments):
+        for index, full_result in enumerate(self.ab_results.segments):
+            result = full_result.result
             if index > 0:
                 axes[0].axvline(
                     result.n_common.min(),
@@ -536,18 +546,18 @@ class ABTest(Analysis):
                     linestyle="--",
                     linewidth=1,
                 )
-                
+
             if index == 0:
                 x_min = 0
             else:
-                x_min = result.n_common.min()    
-            
+                x_min = result.n_common.min()
+
             if index == len(self.ab_results.segments) - 1:
                 x_max = result.n_common.max()
             else:
-                x_max = self.ab_results.segments[index + 1].n_common.min()
+                x_max = self.ab_results.segments[index + 1].result.n_common.min()
 
-            if result.p_value < 0.05:
+            if full_result.null_rejected:
                 axes[0].axvspan(
                     x_min,
                     x_max,
@@ -561,7 +571,7 @@ class ABTest(Analysis):
             axes[0].text(
                 x_text,
                 y_text,
-                f"p={result.p_value:.3f}",
+                f"p={result.p_value:.3f}\nq={full_result.q_value:.3f}",
                 horizontalalignment="center",
                 verticalalignment="center",
                 fontsize=10,

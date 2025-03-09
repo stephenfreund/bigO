@@ -311,23 +311,21 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
         columns=["model", "aic", "pvalue"],
     )
 
-    fitted_models = fitted_models.sort_values(by="aic", ascending=True)
+    fitted_models = fitted_models.sort_values(by="pvalue", ascending=True)
     fitted_models = fitted_models[fitted_models["aic"] < bound_model_fit.aic()]
     fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
-    # better_models = fitted_models[fitted_models["pvalue"] < 0.05]
 
-    # Apply FDR correction (Benjamini–Hochberg) to the p-values.
-    reject, qvalues, _, _ = multipletests(
-        fitted_models["pvalue"], alpha=0.05, method="fdr_bh"
+    # Tests are not independent, as they all use the same data.  So,
+    # no Benjamini–Hochberg.  Just use Holm–Bonferroni instead.  Could also
+    # use Benjamini–Yekutieli.
+    reject, p_adjusted, _, _ = multipletests(
+        fitted_models["pvalue"], alpha=0.05, method="holm"
     )
-
-    # Add the q-values as a new column.
-    fitted_models = fitted_models.assign(qvalue=qvalues)
+    fitted_models = fitted_models.assign(p_adjusted=p_adjusted)
 
     # Optionally, update fitted_models to only include models that passed the FDR test.
     better_models = fitted_models[reject]
-
-    print(better_models)
+    better_models = better_models.sort_values(by="aic", ascending=True)
 
     return CheckBoundResult(bound_model_fit, better_models, warnings)
 

@@ -315,9 +315,8 @@ def check_bound(n: np.ndarray, y: np.ndarray, bound: Model) -> CheckBoundResult:
     fitted_models = fitted_models[fitted_models["aic"] < bound_model_fit.aic()]
     fitted_models = fitted_models[~(fitted_models["model"] <= bound_model_fit)]
 
-    # Tests are not independent, as they all use the same data.  So,
-    # no Benjamini–Hochberg.  Just use Holm–Bonferroni instead.  Could also
-    # use Benjamini–Yekutieli.
+    # Use Holm–Bonferroni instead to adjust for FDR.
+    # Note: Tests are not independent.
     reject, p_adjusted, _, _ = multipletests(
         fitted_models["pvalue"], alpha=0.05, method="holm"
     )

@@ -405,49 +405,6 @@ class ABTest(Analysis):
                 ]
         return "\n".join(messages)
 
-        # # Bonferroni correction for multiple comparisons
-        # num = len(self.ab_results.segments)
-        # significant = all(
-        #     [report.p_value < 0.05 / num for report in self.ab_results.segments]
-        # )
-        # if not significant:
-        #     adjusted = [
-        #         min(1.0, float(report.p_value * num))
-        #         for report in self.ab_results.segments
-        #     ]
-        #     adjusted_str = ", ".join([f"{p:.3f}" for p in adjusted])
-        #     return f"Comparison is not statistically significant for all segments.  Adjusted p-values: {adjusted_str}."
-
-        # # if A is always faster:
-        # if all([report.faster == "A" for report in self.ab_results.segments]):
-        #     return (
-        #         f"{self.a.function_name} is always faster than {self.b.function_name}."
-        #     )
-        # # if B is always faster:
-        # if all([report.faster == "B" for report in self.ab_results.segments]):
-        #     return (
-        #         f"{self.b.function_name} is always faster than {self.a.function_name}."
-        #     )
-
-        # for i in range(len(self.ab_results.segments)):
-        #     # if all segments < i are A and all segments >= i is B:
-        #     if all(
-        #         [report.faster == "A" for report in self.ab_results.segments[:i]]
-        #     ) and all(
-        #         [report.faster == "B" for report in self.ab_results.segments[i:]]
-        #     ):
-        #         return f"{self.a.function_name} is faster than {self.b.function_name} up to {self.ab_results.segments[i].n_common.min()}."
-        #     if all(
-        #         [report.faster == "B" for report in self.ab_results.segments[:i]]
-        #     ) and all(
-        #         [report.faster == "A" for report in self.ab_results.segments[i:]]
-        #     ):
-        #         return f"{self.b.function_name} is faster than {self.a.function_name} up to {self.ab_results.segments[i].n_common.min()}."
-
-        # return (
-        #     f"{self.a.function_name} and {self.b.function_name} have mixed performance."
-        # )
-
     def run(self):
         with timer(self.title()):
             combined_labels = np.concatenate(
@@ -571,7 +528,7 @@ class ABTest(Analysis):
             axes[0].text(
                 x_text,
                 y_text,
-                f"p={result.p_value:.3f}\nq={full_result.q_value:.3f}",
+                f"p={result.p_value:.3f}\nadj_p={full_result.adjusted_pvalue:.3f}",
                 horizontalalignment="center",
                 verticalalignment="center",
                 fontsize=10,
@@ -585,39 +542,3 @@ class ABTest(Analysis):
         )
         axes[0].legend()
         axes[0].grid(True)
-
-        # # ----------------------------------------
-        # # 4.2. Difference in Running Times and Permutation Test by Segment
-        # # ----------------------------------------
-
-        # for segment_number, result in enumerate(self.ab_results.segments[-3:]):
-        #     index = segment_number
-
-        #     valid_perm_stats = result.perm_stats[np.isfinite(result.perm_stats)]
-
-        #     # Histogram of the permutation test distribution
-        #     sns.histplot(
-        #         valid_perm_stats,
-        #         stat="percent",
-        #         bins=50,
-        #         color="C7",
-        #         alpha=0.8,
-        #         label="Permutation Distribution",
-        #         ax=axes[index + 1],
-        #     )
-
-        #     axes[index + 1].axvline(
-        #         result.observed_stat,
-        #         color="red",
-        #         linestyle="--",
-        #         linewidth=2,
-        #         label="Observed Statistic",
-        #     )
-
-        #     axes[index + 1].set_xlabel("Signed Area Between Smoothed Curves")
-        #     axes[index + 1].set_ylabel("Frequency")
-        #     axes[index + 1].set_title(
-        #         f"{result.n_common.min():.2f} <= n <= {result.n_common.max():.2f}\n{result.faster} is better (p-value={result.p_value:.3f})"
-        #     )
-        #     axes[index + 1].legend()
-        #     axes[index + 1].grid(True)
